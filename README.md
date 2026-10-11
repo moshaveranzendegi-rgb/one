@@ -45,3 +45,6 @@ python -m compileall -q app tools tests
 python -m unittest discover -s tests -v
 ```
 هر فایل دانلودی/پارت باید کمتر از 200MB باشد. برای اتصال پارت‌ها، فایل‌های هم‌نام `.part001`, `.part002`, ... و فایل `.sha256.txt` را کنار هم قرار بده و از `JOIN_PARTS.bat` استفاده کن.
+
+## بدون GPU NVIDIA روی رایانهٔ محلی
+اگر سیستم فقط گرافیک Intel دارد، موتور OmniAvatar را محلی نصب نکن. راهنمای ابری و دفترچهٔ آزمایشی Colab را در `CLOUD_GPU_GUIDE_FA.md` و `notebooks/RS-ai-OmniAvatar-Colab.ipynb` ببین. دفترچه ابتدا یک کلیپ ۵ ثانیه‌ای را آزمایش می‌کند؛ اجرای کامل روی GPU رایگان تضمین‌شده نیست و اتصال خودکار برنامه به نشست ابری هنوز فعال نشده است.
