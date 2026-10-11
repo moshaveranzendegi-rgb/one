@@ -57,7 +57,7 @@ if errorlevel 1 goto :fail
 
 echo.
 echo بررسی می‌کنم PyTorch هم GPU را می‌بیند؛ اگر نه، دانلود مدل‌ها را شروع نمی‌کنم...
-wsl -d Ubuntu -- bash -lc "cd /opt/OmniAvatar && source .venv/bin/activate && python -c 'import torch; print(torch.__version__); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CUDA GPU NOT AVAILABLE"); assert torch.cuda.is_available(), "PyTorch cannot access the WSL GPU"'"
+wsl -d Ubuntu -- bash -lc "cd /opt/OmniAvatar && source .venv/bin/activate && python -c 'import torch; print(torch.__version__); assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'"
 if errorlevel 1 goto :fail
 
 echo.
