@@ -1,0 +1,2 @@
+# Optional: required only when a separate environment photo is used.
+rembg[cpu]>=2.0.60,<3

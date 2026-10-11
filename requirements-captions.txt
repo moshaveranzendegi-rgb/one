@@ -1,0 +1,2 @@
+# Optional: needed for accurate time-aligned subtitles from uploaded speech.
+faster-whisper>=1.1,<2
