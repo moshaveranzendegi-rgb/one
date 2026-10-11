@@ -42,8 +42,12 @@ if (-not $Python38) {
     }
     New-Item -ItemType Directory -Force -Path $PythonHome | Out-Null
     & $Installer /quiet 'InstallAllUsers=0' "TargetDir=$PythonHome" 'Include_launcher=0' 'Include_test=0' 'PrependPath=0'
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Python38)) {
-        throw 'Python 3.8 was not installed. Install Python 3.8.10 x64 from python.org and rerun this script.'
+    $pythonInstallExitCode = $LASTEXITCODE
+    # Get-Python38Path returns null when Python is not installed yet; set the target
+    # path explicitly before checking the result of the installer.
+    $Python38 = Join-Path $PythonHome 'python.exe'
+    if ($pythonInstallExitCode -ne 0 -or -not (Test-Path -LiteralPath $Python38)) {
+        throw "Python 3.8 was not installed (installer exit code: $pythonInstallExitCode). Install Python 3.8.10 x64 from python.org and rerun this script."
     }
 } else {
     Write-Host "Using Python 3.8: $Python38"
