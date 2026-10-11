@@ -24,11 +24,11 @@
       <section class="intro">
         <p class="eyebrow">LOCAL-FIRST CREATOR STUDIO</p>
         <h1>از عکس و سناریو، <span>ویدئوی متحرک بساز</span></h1>
-        <p class="intro-copy">عکس آواتار، محیط، سناریو و صدا را انتخاب کن. موتور متحرک‌سازی باید واقعاً اجرا شود؛ در صورت نبود مدل یا GPU، برنامه خطا را واضح نشان می‌دهد و ویدئوی عکس‌ثابت تحویل نمی‌دهد.</p>
+        <p class="intro-copy">عکس آواتار، محیط، سناریو و صدا را انتخاب کن. RS ai با توجه به موتور نصب‌شده، آواتار را متحرک می‌کند؛ روی سیستم بدون GPU انویدیا از حالت CPU برای چهره و سر استفاده می‌شود. در این حالت حرکت کامل دست‌وپا تولید نمی‌شود.</p>
         <div class="intro-points">
-          <span><b>01</b> حرکت بدن و دست‌ها</span>
+          <span><b>01</b> متحرک‌سازی چهره و لب</span>
           <span><b>02</b> صدای فارسی، انگلیسی و روسی</span>
-          <span><b>03</b> زیرنویس هم‌زمان با گفتار</span>
+          <span><b>03</b> حالت تمام‌بدن با موتور GPU سازگار</span>
         </div>
       </section>
 
@@ -83,6 +83,7 @@
             <div class="field"><label for="movement">میزان حرکت</label><select id="movement" name="movement"><option value="natural">طبیعی</option><option value="expressive">دست و بدن پُر‌تحرک‌تر</option><option value="subtle">ملایم</option></select></div>
           </div>
           <p class="hint">تکمیل بدن از عکس نیم‌تنه به مدل inpainting جداگانه نیاز دارد و ممکن است بخش‌های دیده‌نشدهٔ بدن را تخمینی بسازد؛ چهره و لباسِ بخش دیده‌نشده تضمین صددرصدی ندارد.</p>
+          <p id="engineModeNotice" class="hint hidden">حالت SadTalker CPU فعال است: چهره، لب و سر متحرک می‌شوند، اما حرکت واقع‌گرایانهٔ دست‌ها و تمام بدن، تکمیل بدن و تعویض لباس در این حالت فعال نیست. روی پردازندهٔ قدیمی ساخت ویدئو ممکن است طولانی شود.</p>
 
           <div class="separator"></div>
           <div class="section-title"><span class="number">۴</span><div><h3>لباس</h3><p>لباس فعلی را نگه دار یا چند لایه را جداگانه وارد کن</p></div></div>

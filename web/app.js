@@ -12,7 +12,8 @@
   const capabilityNames = {
     ffmpeg:['FFmpeg و پردازش ویدئو', s => `${s.version || 'نسخه نامشخص'}${s.subtitle_filter ? ' · زیرنویس آماده' : ' · فیلتر زیرنویس ندارد'}`],
     wsl:['محیط WSL2 / GPU', s => s.message || ''],
-    omniavatar:['موتور آواتار متحرک', s => s.ready ? 'مدل ۱٫۳B شناسایی شد' : 'کد یا وزن‌های مدل نصب نیست'],
+    omniavatar:['موتور آواتار GPU', s => s.ready ? 'مدل ۱٫۳B شناسایی شد' : 'مدل GPU نصب نیست'],
+    sadtalker:['موتور جایگزین CPU (SadTalker)', s => s.ready ? 'آماده · متحرک‌سازی چهره، لب و سر' : (s.message || 'نصب نشده · setup_sadtalker_cpu.bat')],
     fashn:['تعویض لباس FASHN', s => s.ready ? 'وزن‌ها شناسایی شد' : 'اختیاری · مدل لباس نصب نیست'],
     body_completion:['تکمیل بدن', s => s.ready ? 'موتور نصب است' : 'اختیاری · مدل inpainting نصب نیست'],
     tts:['تبدیل متن به گفتار', s => s.ready ? 'Edge TTS نصب است' : 'برای استفاده از سناریو باید نصب شود'],
@@ -86,9 +87,26 @@
       const s = await api('/api/status');
       const list = $('capabilityList'); list.replaceChildren();
       Object.keys(capabilityNames).forEach(k => { if (s[k]) list.append(capabilityRow(k,s[k])); });
-      const canGenerate = s.ffmpeg?.ready && s.wsl?.ready && s.wsl?.gpu_ready && s.omniavatar?.ready;
+      const engineId = s.avatar_engine?.id || 'none';
+      const canGenerate = Boolean(s.ffmpeg?.ready && s.avatar_engine?.ready);
       $('serverBadge').className = 'status-badge ' + (canGenerate ? 'ready' : 'warn');
-      $('serverBadge').lastChild.textContent = canGenerate ? 'موتور اصلی آماده است' : 'نیاز به آماده‌سازی موتور';
+      $('serverBadge').lastChild.textContent = !canGenerate
+        ? 'نیاز به نصب موتور آواتار'
+        : (engineId === 'sadtalker_cpu' ? 'موتور CPU آماده است · حرکت چهره و سر' : 'موتور GPU آماده است');
+
+      const cpuMode = engineId === 'sadtalker_cpu';
+      const bodyOption = $('bodyMode').querySelector('option[value="complete"]');
+      if (bodyOption) bodyOption.disabled = cpuMode;
+      if (cpuMode && $('bodyMode').value === 'complete') $('bodyMode').value = 'keep';
+      const customClothing = document.querySelector('input[name="clothing_mode"][value="custom"]');
+      if (customClothing) {
+        customClothing.disabled = cpuMode;
+        if (cpuMode && customClothing.checked) document.querySelector('input[name="clothing_mode"][value="current"]').checked = true;
+      }
+      $('style').disabled = cpuMode;
+      $('movement').disabled = cpuMode;
+      $('engineModeNotice').classList.toggle('hidden', !cpuMode);
+      updateClothingMode();
       return s;
     } catch (error) {
       $('serverBadge').className = 'status-badge unknown';

@@ -106,6 +106,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           .\.venv\Scripts\python.exe -m compileall -q app tools tests
           .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+          $tokens = $null; $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path (Get-Location) 'tools/setup_sadtalker_cpu.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) { $parseErrors | ForEach-Object { Write-Error $_.Message }; throw 'SadTalker setup script has PowerShell syntax errors.' }
           powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
       - name: Smoke-test packaged Windows executable
@@ -221,7 +224,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v0.2.0-build.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" --title "RS ai $TAG" --notes "Automated build. Python tests, packaged Windows /api/health smoke test, and Android debug APK build completed in GitHub Actions. The avatar engine weights are not bundled; see repository README for requirements."
+          gh release create "$TAG" --title "RS ai $TAG" --notes "Automated build. Python tests, packaged Windows /api/health smoke test, and Android debug APK build completed in GitHub Actions. SadTalker CPU is an optional local fallback (face/lips/head only); its Python dependencies and model weights are downloaded separately by tools/setup_sadtalker_cpu.bat. OmniAvatar GPU weights are not bundled."
           gh release upload "$TAG" release-assets/windows/* release-assets/android/* --clobber
           echo "Published release: $TAG"
       - name: Remove temporary source transfer chunks

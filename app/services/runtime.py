@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from app.config import APP_HOME
+from app.services.engine_selection import select_avatar_engine
 
 
-def _command_version(command: list[str], timeout: int = 3) -> tuple[bool, str]:
+def _command_version(command: list[str], timeout: int = 3, cwd: str | None = None) -> tuple[bool, str]:
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+        result = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, check=False, cwd=cwd,
+        )
         line = (result.stdout or result.stderr).strip().splitlines()
         return result.returncode == 0, line[0][:160] if line else "installed"
     except (OSError, subprocess.TimeoutExpired):
@@ -65,6 +69,32 @@ def get_runtime_status() -> dict[str, Any]:
         body_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", "test -f /opt/rs-ai-body-ready"], timeout=3)
         wsl_message = gpu_text if wsl_gpu else "WSL2 موجود است، اما GPU انویدیا از داخل آن تأیید نشد"
 
+    # Optional local CPU fallback, isolated from the app's Python 3.11 runtime.
+    sadtalker_dir = Path(os.getenv("RS_AI_SADTALKER_DIR", str(APP_HOME / "engines" / "SadTalker"))).expanduser()
+    sadtalker_python = sadtalker_dir / ".venv" / "Scripts" / "python.exe"
+    sadtalker_required = [
+        sadtalker_dir / "inference.py",
+        sadtalker_dir / "checkpoints" / "SadTalker_V0.0.2_256.safetensors",
+        sadtalker_dir / "checkpoints" / "mapping_00109-model.pth.tar",
+    ]
+    sadtalker_files_ready = sadtalker_python.is_file() and all(p.is_file() for p in sadtalker_required)
+    sadtalker_ready = False
+    sadtalker_message = "نصب نشده؛ برای رایانهٔ بدون GPU انویدیا، tools\\setup_sadtalker_cpu.bat را اجرا کن"
+    if sadtalker_files_ready:
+        sadtalker_ready, sadtalker_message = _command_version(
+            [str(sadtalker_python), "-c", "import inference; import torch; print('SadTalker CPU dependencies ready')"],
+            timeout=35,
+            cwd=str(sadtalker_dir),
+        )
+        if not sadtalker_ready:
+            sadtalker_message = "فایل‌ها وجود دارند، اما بررسی وابستگی‌های SadTalker شکست خورد: " + sadtalker_message
+
+    avatar_engine_id = select_avatar_engine(bool(wsl_gpu and omni_ready), bool(sadtalker_ready))
+    avatar_engine_label = {
+        "omniavatar": "OmniAvatar GPU",
+        "sadtalker_cpu": "SadTalker CPU",
+    }.get(avatar_engine_id, "موتور آواتار نصب نیست")
+
     try:
         import edge_tts  # noqa: F401
         tts_ready = True
@@ -86,6 +116,12 @@ def get_runtime_status() -> dict[str, Any]:
         "ffmpeg": {"ready": ffmpeg_ok, "path": str(ffmpeg or ""), "version": ffmpeg_version, "subtitle_filter": subtitles_filter},
         "wsl": {"ready": wsl_ok, "gpu_ready": wsl_gpu, "message": wsl_message},
         "omniavatar": {"ready": omni_ready},
+        "sadtalker": {"ready": sadtalker_ready, "message": sadtalker_message, "path": str(sadtalker_dir)},
+        "avatar_engine": {
+            "id": avatar_engine_id or "none",
+            "label": avatar_engine_label,
+            "ready": avatar_engine_id is not None,
+        },
         "fashn": {"ready": fashn_ready},
         "body_completion": {"ready": body_ready},
         "tts": {"ready": tts_ready},

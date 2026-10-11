@@ -112,7 +112,7 @@ def main() -> None:
         "app", "web", "tools", "tests", "requirements.txt", "requirements-vision.txt", "requirements-captions.txt",
         "INSTALL_RS-ai.bat", "BUILD_EXE_WINDOWS.bat", "PACKAGE_EXE_WINDOWS.bat", "RUN_RS-ai.bat", "RUN_RS-ai_LAN.bat", "RUN_RS-ai_Portable.bat",
         "JOIN_PARTS.bat", "JOINER_README_FA.txt", "install_windows.bat", "install_tts.bat", "install_vision.bat",
-        "install_captions.bat", "README.md", "START_HERE_FA.md", "INSTALLER_NOTES_FA.md", "STATUS.md", "CHANGELOG.md",
+        "install_captions.bat", "README.md", "START_HERE_FA.md", "INSTALLER_NOTES_FA.md", "CPU_ENGINE_GUIDE_FA.md", "STATUS.md", "CHANGELOG.md",
         "run.py", ".gitignore",
     ]
     android_roots = ["android", "INSTALLER_NOTES_FA.md", "README.md"]

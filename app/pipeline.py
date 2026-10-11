@@ -72,18 +72,27 @@ def run_job(job_id: str) -> None:
         ffmpeg = status["ffmpeg"]["path"]
         if not status["ffmpeg"]["ready"] or not ffmpeg:
             raise RuntimeError("FFmpeg نصب نیست یا مسیر آن نامعتبر است. ابتدا FFmpeg را نصب کن یا مسیر RS_AI_FFMPEG را تنظیم کن.")
-        if not status["wsl"]["ready"]:
-            raise RuntimeError("برای تولید آواتار متحرک، WSL2 لازم است. فایل tools/setup_avatar_wsl.bat را اجرا کن.")
-        if not status["wsl"]["gpu_ready"]:
-            raise RuntimeError("GPU انویدیا از داخل WSL2 قابل استفاده نیست. در این نسخه ساخت ویدئوی واقعی بدون GPU تأیید نمی‌شود؛ خروجی عکس ثابت تولید نخواهد شد.")
-        if not status["omniavatar"]["ready"]:
-            raise RuntimeError("OmniAvatar یا مدل ۱٫۳B هنوز نصب نیست. فایل tools/setup_avatar_wsl.bat را اجرا کن و فضای کافی برای مدل‌ها داشته باش.")
+        engine_info = status.get("avatar_engine", {})
+        engine = engine_info.get("id", "none")
+        if engine not in {"omniavatar", "sadtalker_cpu"}:
+            raise RuntimeError(
+                "هیچ موتور آواتاری نصب و آماده نیست. برای رایانهٔ فعلی بدون GPU انویدیا، "
+                "فایل tools\\setup_sadtalker_cpu.bat را اجرا کن. این موتور چهره و سر را متحرک می‌کند، "
+                "اما حرکت کامل دست‌ها و بدن را تولید نمی‌کند."
+            )
+        if engine == "sadtalker_cpu":
+            if form.get("body_mode") == "complete":
+                raise RuntimeError("تکمیل بدن به مدل جداگانه نیاز دارد و در حالت SadTalker CPU فعال نیست؛ حالت بدن را روی «حفظ قاب موجود» بگذار.")
+            garments = form.get("garments", {})
+            if form.get("clothing_mode") == "custom" and any(garments.get(k) for k in ("upper", "lower", "onepiece")):
+                raise RuntimeError("تعویض لباس با موتور GPU جداگانه انجام می‌شود و در حالت SadTalker CPU فعال نیست.")
         avatar = Path(form["files"]["avatar"])
         _check_image(avatar, "آواتار")
         environment = Path(form["files"]["environment"]) if form["files"].get("environment") else None
         if environment:
             _check_image(environment, "محیط")
-        _progress(job_id, job_dir, 8, "بررسی ورودی‌ها و تنظیمات")
+        engine_label = "OmniAvatar GPU" if engine == "omniavatar" else "SadTalker CPU (چهره و سر)"
+        _progress(job_id, job_dir, 8, f"موتور انتخاب‌شده: {engine_label}")
 
         audio_file = job_dir / "spoken.mp3"
         subtitle_path: Path | None = None
@@ -135,7 +144,11 @@ def run_job(job_id: str) -> None:
         _progress(job_id, job_dir, 48, "ترکیب آواتار با محیط انتخابی")
         composite_scene(current_avatar, environment, scene_image, form["video_ratio"])
         prompt = _environment_prompt(form)
-        raw_video = generate_avatar(scene_image, model_audio, prompt, job_dir, lambda v, m: _progress(job_id, job_dir, v, m))
+        raw_video = generate_avatar(
+            scene_image, model_audio, prompt, job_dir,
+            lambda v, m: _progress(job_id, job_dir, v, m),
+            engine=engine,
+        )
 
         output_dir_raw = str(form.get("output_directory", "")).strip()
         output_dir = Path(output_dir_raw).expanduser() if output_dir_raw else OUTPUTS_DIR
@@ -155,9 +168,16 @@ def run_job(job_id: str) -> None:
             "output_format": form["video_format"],
             "subtitles_burned_in": bool(subtitle_path),
             "source_audio": str(audio_file),
-            "avatar_engine": "OmniAvatar 1.3B",
+            "avatar_engine": "OmniAvatar 1.3B" if engine == "omniavatar" else "SadTalker CPU",
             "output": str(final),
-            "notes": ["OmniAvatar output is upscaled from its configured generation size to the selected social-media preset."],
+            "notes": (
+                ["OmniAvatar output is upscaled from its configured generation size to the selected social-media preset."]
+                if engine == "omniavatar"
+                else [
+                    "SadTalker CPU mainly animates facial expression, lips and head; body and hand gestures are not fully generated.",
+                    "The 256px CPU output is upscaled to the selected social-media preset; old CPUs may require substantial processing time.",
+                ]
+            ),
         }
         (job_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         db.update_job(job_id, status="completed", progress=100, message="ویدئو با موفقیت ساخته شد", output_path=str(final), error=None)

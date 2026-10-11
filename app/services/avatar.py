@@ -6,6 +6,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from app.config import APP_HOME
+
 
 def _wsl_path(path: Path, wsl: str, distro: str) -> str:
     result = subprocess.run([wsl, "-d", distro, "--", "wslpath", "-a", str(path.resolve())], capture_output=True, text=True, timeout=15)
@@ -14,7 +16,7 @@ def _wsl_path(path: Path, wsl: str, distro: str) -> str:
     return result.stdout.strip()
 
 
-def generate_avatar(image_path: Path, audio_path: Path, prompt: str, job_dir: Path, progress=None) -> Path:
+def _generate_omniavatar(image_path: Path, audio_path: Path, prompt: str, job_dir: Path, progress=None) -> Path:
     wsl = os.getenv("RS_AI_WSL", "wsl.exe")
     distro = os.getenv("RS_AI_WSL_DISTRO", "Ubuntu")
     omni_dir = os.getenv("RS_AI_OMNIAVATAR_DIR", "/opt/OmniAvatar")
@@ -60,3 +62,75 @@ def generate_avatar(image_path: Path, audio_path: Path, prompt: str, job_dir: Pa
     stable = job_dir / "avatar_motion_raw.mp4"
     shutil.copy2(generated_path, stable)
     return stable
+
+
+def _generate_sadtalker_cpu(image_path: Path, audio_path: Path, job_dir: Path, progress=None) -> Path:
+    """Animate a full-frame portrait with CPU inference; mainly face/lips/head, not full-body gestures."""
+    root = Path(os.getenv("RS_AI_SADTALKER_DIR", str(APP_HOME / "engines" / "SadTalker"))).expanduser().resolve()
+    python = root / ".venv" / "Scripts" / "python.exe"
+    inference = root / "inference.py"
+    checkpoint_dir = root / "checkpoints"
+    needed = [
+        python, inference,
+        checkpoint_dir / "SadTalker_V0.0.2_256.safetensors",
+        checkpoint_dir / "mapping_00109-model.pth.tar",
+    ]
+    missing = [str(path) for path in needed if not path.is_file()]
+    if missing:
+        raise RuntimeError(
+            "موتور SadTalker CPU یا وزن‌های آن نصب نیست. فایل tools\\setup_sadtalker_cpu.bat را اجرا کن. "
+            "فایل‌های مفقود: " + ", ".join(missing[:4])
+        )
+
+    result_dir = (job_dir / "sadtalker_results").resolve()
+    result_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(python), str(inference),
+        "--driven_audio", str(audio_path.resolve()),
+        "--source_image", str(image_path.resolve()),
+        "--result_dir", str(result_dir),
+        "--checkpoint_dir", str(checkpoint_dir),
+        "--cpu", "--size", "256", "--batch_size", "1", "--preprocess", "full",
+    ]
+    if progress:
+        progress(55, "SadTalker در حال متحرک‌سازی چهره و سر روی CPU است؛ روی پردازندهٔ قدیمی ممکن است زمان‌بر باشد.")
+    try:
+        result = subprocess.run(
+            command, cwd=str(root), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=10_800,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("اجرای SadTalker بیش از ۳ ساعت طول کشید و متوقف شد. ابتدا یک صدای کوتاه‌تر آزمایش کن.") from exc
+    log_text = (result.stdout or "") + "\n--- stderr ---\n" + (result.stderr or "")
+    (job_dir / "sadtalker.log").write_text(log_text, encoding="utf-8", errors="replace")
+    if result.returncode:
+        raise RuntimeError("SadTalker نتوانست ویدئو بسازد؛ جزئیات در sadtalker.log قرار دارد. " + log_text[-3500:])
+
+    outputs = sorted((p for p in result_dir.rglob("*.mp4") if p.is_file()), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not outputs:
+        raise RuntimeError("SadTalker بدون گزارش خطا پایان یافت، اما MP4 خروجی پیدا نشد؛ sadtalker.log را بررسی کن.")
+    generated = outputs[0]
+    if generated.stat().st_size < 20_000:
+        raise RuntimeError("فایل خروجی SadTalker خیلی کوچک یا ناقص است.")
+    stable = job_dir / "avatar_motion_raw.mp4"
+    shutil.copy2(generated, stable)
+    return stable
+
+
+def generate_avatar(
+    image_path: Path,
+    audio_path: Path,
+    prompt: str,
+    job_dir: Path,
+    progress=None,
+    engine: str = "omniavatar",
+) -> Path:
+    """Run the engine explicitly selected by runtime hardware/model checks."""
+    if engine == "omniavatar":
+        return _generate_omniavatar(image_path, audio_path, prompt, job_dir, progress)
+    if engine == "sadtalker_cpu":
+        return _generate_sadtalker_cpu(image_path, audio_path, job_dir, progress)
+    raise RuntimeError(
+        "هیچ موتور آواتاری آماده نیست. روی سیستم بدون GPU انویدیا، "
+        "tools\\setup_sadtalker_cpu.bat را اجرا کن."
+    )
