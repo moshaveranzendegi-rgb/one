@@ -1,0 +1,1 @@
+2c46f36128a2f6b123ab48374971bcb5c62abf9a343155cdcc0663dd3af32b59  release-android/RS-ai-Android-debug.apk
