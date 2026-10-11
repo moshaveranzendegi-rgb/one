@@ -1,0 +1,240 @@
+name: RS ai - Test and build installers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'source-bundle/chunks/**'
+      - 'app/**'
+      - 'web/**'
+      - 'android/**'
+      - 'tools/**'
+      - 'tests/**'
+      - '*.bat'
+      - '*.md'
+      - 'requirements*.txt'
+      - 'run.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Restore and import source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f app/api.py ]; then
+            echo "RS ai source is already imported."
+            exit 0
+          fi
+          test -d source-bundle/chunks || { echo "Source bundle chunks are missing."; exit 1; }
+          cat source-bundle/chunks/part-*.b64 | base64 --decode > "$RUNNER_TEMP/RS-ai-Complete-Source.zip"
+          unzip -t "$RUNNER_TEMP/RS-ai-Complete-Source.zip"
+          mkdir -p "$RUNNER_TEMP/rs-ai-unpacked"
+          unzip -q "$RUNNER_TEMP/RS-ai-Complete-Source.zip" -d "$RUNNER_TEMP/rs-ai-unpacked"
+          test -f "$RUNNER_TEMP/rs-ai-unpacked/RS-ai/app/api.py"
+          rsync -a --exclude='.git/' "$RUNNER_TEMP/rs-ai-unpacked/RS-ai/" ./
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- ':!source-bundle/chunks'
+          if ! git diff --cached --quiet; then
+            git commit -m "Import RS ai source code"
+            git push origin HEAD:main
+          fi
+
+  test:
+    needs: import-source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt httpx pytest
+      - name: Compile Python
+        run: python -m compileall -q app tools tests
+      - name: Run unit and API tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate browser JavaScript
+        run: node --check web/app.js
+      - name: Validate source package ZIPs
+        run: |
+          python tools/package_distributions.py --output "$RUNNER_TEMP/rs-ai-packages"
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          folder = Path(__import__('os').environ['RUNNER_TEMP']) / 'rs-ai-packages'
+          for path in folder.glob('*.zip'):
+              with zipfile.ZipFile(path) as archive:
+                  assert archive.testzip() is None, path
+              assert path.stat().st_size < 200_000_000, path
+          print('Source package ZIP and size checks passed.')
+          PY
+
+  build-windows:
+    needs: import-source
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Prepare build environment
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller httpx
+      - name: Build Windows portable app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\.venv\Scripts\python.exe -m compileall -q app tools tests
+          .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
+      - name: Smoke-test packaged Windows executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $outLog = Join-Path $env:RUNNER_TEMP 'rs-ai-out.log'
+          $errLog = Join-Path $env:RUNNER_TEMP 'rs-ai-err.log'
+          $proc = Start-Process -FilePath '.\dist\RS-ai\RS-ai.exe' -ArgumentList '--no-browser' -PassThru -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+          $ready = $false
+          try {
+            for ($i = 0; $i -lt 25; $i++) {
+              Start-Sleep -Seconds 2
+              try {
+                $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8765/api/health' -TimeoutSec 2
+                if ($r.ok -and $r.app -eq 'RS-ai') { $ready = $true; break }
+              } catch {}
+              $proc.Refresh()
+              if ($proc.HasExited) { break }
+            }
+            if (-not $ready) {
+              if (Test-Path $outLog) { Get-Content $outLog }
+              if (Test-Path $errLog) { Get-Content $errLog }
+              throw 'Packaged Windows executable did not pass the /api/health smoke test.'
+            }
+          } finally {
+            $proc.Refresh()
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          }
+      - name: Package Windows app and source ZIPs
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe tools/package_distributions.py --output dist-packages
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/package_windows_build.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows package creation failed." }
+          Get-ChildItem dist-packages -File | ForEach-Object {
+            if ($_.Length -ge 200000000 -and $_.Name -notmatch '\.zip$') { throw "Download part is >= 200 MB: $($_.Name)" }
+          }
+      - name: Upload Windows installer parts and source packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: RS-ai-Windows-Distribution
+          path: dist-packages/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  build-android:
+    needs: import-source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+      - name: Ensure Android SDK platform is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          else
+            echo "Android SDK manager was not found on the runner."
+            exit 1
+          fi
+      - name: Build Android debug APK
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Prepare Android deliverables
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-android
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-android/RS-ai-Android-debug.apk
+          sha256sum release-android/RS-ai-Android-debug.apk > release-android/RS-ai-Android-debug.apk.sha256.txt
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: RS-ai-Android-APK
+          path: release-android/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish-release:
+    needs: [test, build-windows, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/download-artifact@v6
+        with:
+          name: RS-ai-Windows-Distribution
+          path: release-assets/windows
+      - uses: actions/download-artifact@v6
+        with:
+          name: RS-ai-Android-APK
+          path: release-assets/android
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v0.2.0-build.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --title "RS ai $TAG" --notes "Automated build. Python tests, packaged Windows /api/health smoke test, and Android debug APK build completed in GitHub Actions. The avatar engine weights are not bundled; see repository README for requirements."
+          gh release upload "$TAG" release-assets/windows/* release-assets/android/* --clobber
+          echo "Published release: $TAG"
+      - name: Remove temporary source transfer chunks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source-bundle/chunks
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Remove temporary source transfer chunks"
+            git push origin HEAD:main
+          fi
