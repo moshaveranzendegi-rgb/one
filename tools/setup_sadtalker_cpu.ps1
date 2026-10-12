@@ -76,11 +76,11 @@ if (-not (Test-Path $VenvPython)) {
     & $Python38 -m venv (Join-Path $EngineHome '.venv')
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) { throw 'Could not create the SadTalker virtual environment.' }
 }
-& $VenvPython -m pip install --upgrade 'pip<25' 'setuptools<60' wheel
+& $VenvPython -m pip install --timeout 120 --retries 10 --upgrade 'pip<25' 'setuptools<60' wheel
 if ($LASTEXITCODE -ne 0) { throw 'Could not prepare pip/build dependencies.' }
-& $VenvPython -m pip install 'torch==1.12.1+cpu' 'torchvision==0.13.1+cpu' --extra-index-url 'https://download.pytorch.org/whl/cpu'
+& $VenvPython -m pip install --timeout 120 --retries 10 'torch==1.12.1+cpu' 'torchvision==0.13.1+cpu' --extra-index-url 'https://download.pytorch.org/whl/cpu'
 if ($LASTEXITCODE -ne 0) { throw 'Could not install CPU-only PyTorch. Review the error above and rerun.' }
-& $VenvPython -m pip install -r (Join-Path $EngineHome 'requirements.txt') 'opencv-python==4.8.1.78'
+& $VenvPython -m pip install --timeout 120 --retries 10 -r (Join-Path $EngineHome 'requirements.txt') 'opencv-python==4.8.1.78'
 if ($LASTEXITCODE -ne 0) { throw 'SadTalker dependencies did not install. Rerun to retry or send the complete error.' }
 
 Write-Host '[4/5] Downloading the 256px inference checkpoint and full-frame mapping weights...' -ForegroundColor Cyan
