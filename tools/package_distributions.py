@@ -13,7 +13,7 @@ MAX_DOWNLOAD_BYTES = 200_000_000
 PART_BYTES = 180_000_000
 EXCLUDED_DIRS = {
     ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    "dist", "build", "dist-packages", "outputs", "data", "models", "pretrained_models",
+    "source-bundle", "release-assets", "dist", "build", "dist-packages", "outputs", "data", "models", "pretrained_models",
     ".gradle", "node_modules",
 }
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".sqlite", ".sqlite3", ".db"}
