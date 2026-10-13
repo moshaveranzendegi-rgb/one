@@ -21,7 +21,7 @@ New-Item -ItemType Directory -Force -Path $notebooks | Out-Null
 Copy-Item -LiteralPath 'notebooks\RS-ai-OmniAvatar-Colab.ipynb' -Destination $notebooks -Force
 Copy-Item -LiteralPath 'CLOUD_GPU_GUIDE_FA.md' -Destination $portable -Force
 @'
-RS ai portable build 0.4.0
+RS ai portable build 0.4.1
 - Start with RUN_RS-ai_Portable.bat or RS-ai.exe.
 - Recommended on Intel-only PCs: choose cloud GPU handoff in the app, download the ZIP, run notebooks\RS-ai-OmniAvatar-Colab.ipynb in a GPU-enabled Colab session, then import the returned MP4 into the same job.
 - No image or audio is uploaded automatically. Free GPU availability and memory are not guaranteed; cloud upload/download remain manual.

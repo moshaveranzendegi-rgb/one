@@ -8,7 +8,10 @@ $Out = Join-Path $Root 'dist-packages'
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Base = 'RS-ai-Windows-Portable'
 $Zip = Join-Path $Out ($Base + '.zip')
-Get-ChildItem -LiteralPath $Out -File | Where-Object { $_.Name -like ($Base + '.part*') -or $_.Name -in @($Base + '.zip', $Base + '.sha256.txt') } | Remove-Item -Force
+$HashFile = Join-Path $Out ($Base + '.sha256.txt')
+Get-ChildItem -LiteralPath $Out -File | Where-Object { $_.Name -like ($Base + '.part*') } | Remove-Item -Force
+if (Test-Path -LiteralPath $Zip) { Remove-Item -LiteralPath $Zip -Force }
+if (Test-Path -LiteralPath $HashFile) { Remove-Item -LiteralPath $HashFile -Force }
 Compress-Archive -Path (Join-Path $BuildDir '*') -DestinationPath $Zip -CompressionLevel Optimal
 $Python = Join-Path $Root '.venv\Scripts\python.exe'
 if (-not (Test-Path $Python)) { throw 'Missing virtual environment Python. Run INSTALL_RS-ai.bat first.' }
