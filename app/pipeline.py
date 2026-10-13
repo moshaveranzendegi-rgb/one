@@ -108,7 +108,12 @@ def run_job(job_id: str) -> None:
             subtitle_path = job_dir / "captions.srt"
         if form["audio_source"] == "tts":
             _progress(job_id, job_dir, 15, "تبدیل سناریو به گفتار")
-            make_tts(form["scenario"], form["language"], form["voice"], audio_file, subtitle_path)
+            tts_backend = make_tts(
+                form["scenario"], form["language"], form["voice"], audio_file, subtitle_path, ffmpeg
+            )
+            _log(job_dir, f"TTS backend selected: {tts_backend}")
+            if tts_backend != "edge-tts":
+                _progress(job_id, job_dir, 18, f"صدای جایگزین فعال شد: {tts_backend}")
         else:
             original = Path(form["files"]["audio"])
             if not original.exists():

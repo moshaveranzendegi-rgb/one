@@ -20,14 +20,35 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ("Using PyInstaller " + (($PyInstallerCheck | Out-String).Trim()))
 }
 
-& $Python -m PyInstaller --noconfirm --clean --onedir --name RS-ai `
-  --add-data 'web;web' `
-  --add-data 'tools;tools' `
-  --collect-all edge_tts --collect-all fastapi --collect-all starlette --collect-all uvicorn `
-  --hidden-import app.api --hidden-import app.pipeline `
-  --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto `
-  --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.lifespan.on `
-  run.py
+$VisionArgs = @()
+$VisionProbe = & $Python -c "import importlib.util; print('yes' if importlib.util.find_spec('rembg') and importlib.util.find_spec('onnxruntime') else 'no')" 2>$null
+if ($LASTEXITCODE -eq 0 -and (($VisionProbe | Out-String).Trim() -eq 'yes')) {
+    $VisionArgs = @(
+        '--collect-all', 'rembg',
+        '--collect-binaries', 'onnxruntime'
+    )
+    Write-Host 'Including CPU background-removal support (rembg + ONNX Runtime).' -ForegroundColor Cyan
+} else {
+    Write-Host 'Vision packages not installed; background-removal support will be omitted. Run install_vision.bat before building to include it.' -ForegroundColor Yellow
+}
+$BuildArgs = @(
+    '--noconfirm', '--clean', '--onedir', '--name', 'RS-ai',
+    '--add-data', 'web;web',
+    '--add-data', 'tools;tools',
+    '--collect-all', 'edge_tts',
+    '--collect-all', 'gtts',
+    '--collect-all', 'fastapi',
+    '--collect-all', 'starlette',
+    '--collect-all', 'uvicorn',
+    '--hidden-import', 'app.api',
+    '--hidden-import', 'app.pipeline',
+    '--hidden-import', 'uvicorn.logging',
+    '--hidden-import', 'uvicorn.loops',
+    '--hidden-import', 'uvicorn.loops.auto',
+    '--hidden-import', 'uvicorn.protocols.http.auto',
+    '--hidden-import', 'uvicorn.lifespan.on'
+) + $VisionArgs + @('run.py')
+& $Python -m PyInstaller @BuildArgs
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed with exit code $LASTEXITCODE." }
 
 $portable = Join-Path (Get-Location) 'dist\RS-ai'
@@ -39,7 +60,7 @@ New-Item -ItemType Directory -Force -Path $notebooks | Out-Null
 Copy-Item -LiteralPath 'notebooks\RS-ai-OmniAvatar-Colab.ipynb' -Destination $notebooks -Force
 Copy-Item -LiteralPath 'CLOUD_GPU_GUIDE_FA.md' -Destination $portable -Force
 @'
-RS ai portable build 0.4.2
+RS ai portable build 0.4.3
 - Start with RUN_RS-ai_Portable.bat or RS-ai.exe.
 - Recommended on Intel-only PCs: choose cloud GPU handoff in the app, download the ZIP, run notebooks\RS-ai-OmniAvatar-Colab.ipynb in a GPU-enabled Colab session, then import the returned MP4 into the same job.
 - No image or audio is uploaded automatically. Free GPU availability and memory are not guaranteed; cloud upload/download remain manual.

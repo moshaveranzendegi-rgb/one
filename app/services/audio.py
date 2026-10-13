@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,7 +82,7 @@ async def _edge_tts_stream(text: str, voice: str, audio_path: Path, subtitles_pa
     try:
         import edge_tts
     except ImportError as exc:
-        raise RuntimeError("موتور صدای رایگان Edge TTS نصب نیست. فایل install_tts.bat را اجرا کن؛ این موتور برای تبدیل متن به صدا به اینترنت نیاز دارد.") from exc
+        raise RuntimeError("موتور صدای Edge TTS نصب نیست.") from exc
     # Explicitly request word events; the Edge TTS default may emit sentence boundaries only.
     communicate = edge_tts.Communicate(text=text, voice=voice, boundary="WordBoundary")
     words: list[tuple[float, float, str]] = []
@@ -92,14 +95,163 @@ async def _edge_tts_stream(text: str, voice: str, audio_path: Path, subtitles_pa
                 if timing:
                     words.append(timing)
     if not audio_path.exists() or audio_path.stat().st_size < 1024:
-        raise RuntimeError("تولید صدای گفتار ناموفق بود؛ سرویس صدا پاسخ معتبر نداد.")
+        raise RuntimeError("تولید صدای Edge TTS ناموفق بود؛ سرویس صدا پاسخ معتبر نداد.")
     if subtitles_path:
         groups = _group_word_boundaries(words)
-        write_srt(groups, subtitles_path)
+        if groups:
+            write_srt(groups, subtitles_path)
 
 
-def make_tts(text: str, language: str, voice: str, audio_path: Path, subtitles_path: Path | None) -> None:
-    asyncio.run(_edge_tts_stream(text, voice or VOICE_DEFAULTS[language], audio_path, subtitles_path))
+def _caption_chunks(text: str) -> list[str]:
+    tokens = re.split(r"\s+", text.strip())
+    chunks: list[str] = []
+    active: list[str] = []
+    for token in tokens:
+        if not token:
+            continue
+        if active and (len(active) >= 7 or len(" ".join(active)) + len(token) + 1 > 44):
+            chunks.append(" ".join(active))
+            active = []
+        active.append(token)
+        if len(active) >= 3 and re.search(r"[.!?؟،؛,:]$", token):
+            chunks.append(" ".join(active))
+            active = []
+    if active:
+        chunks.append(" ".join(active))
+    return chunks
+
+
+def _write_fallback_subtitles(
+    text: str,
+    audio_path: Path,
+    subtitles_path: Path | None,
+    ffmpeg: str | None,
+) -> None:
+    if not subtitles_path:
+        return
+    chunks = _caption_chunks(text)
+    if not chunks:
+        return
+    duration = 0.0
+    if ffmpeg:
+        try:
+            duration = media_duration(audio_path, ffmpeg)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            duration = 0.0
+    if duration <= 0:
+        # Last-resort estimate only used if ffprobe itself is unavailable.
+        duration = max(1.0, len(text) / 12.0)
+    weights = [max(1, len(chunk)) for chunk in chunks]
+    total_weight = sum(weights)
+    entries: list[tuple[float, float, str]] = []
+    cursor = 0.0
+    for index, (chunk, weight) in enumerate(zip(chunks, weights)):
+        end = duration if index == len(chunks) - 1 else cursor + duration * weight / total_weight
+        entries.append((cursor, end, chunk))
+        cursor = end
+    write_srt(entries, subtitles_path)
+
+
+def _piper_fallback(
+    text: str,
+    audio_path: Path,
+    subtitles_path: Path | None,
+    ffmpeg: str | None,
+) -> None:
+    """Use the already-installed local Persian Piper voice when Microsoft TTS is unavailable."""
+    app_data = Path(os.environ.get("LOCALAPPDATA") or Path.home())
+    engine_dir = app_data / "RS-ai" / "engines" / "PiperTTS"
+    piper = engine_dir / ".venv" / "Scripts" / "piper.exe"
+    model = engine_dir / "voices" / "fa_IR-amir-medium.onnx"
+    config = engine_dir / "voices" / "fa_IR-amir-medium.onnx.json"
+    if not all(path.is_file() for path in (piper, model, config)):
+        raise RuntimeError("صدای آفلاین فارسی Piper نصب نیست؛ فایل مدل fa_IR-amir-medium.onnx پیدا نشد.")
+    encoder = ffmpeg or os.getenv("RS_AI_FFMPEG") or shutil.which("ffmpeg")
+    if not encoder and os.name == "nt":
+        candidate = Path(r"C:\ffmpeg\bin\ffmpeg.exe")
+        if candidate.is_file():
+            encoder = str(candidate)
+    if not encoder:
+        raise RuntimeError("برای تبدیل صدای آفلاین Piper به MP3، FFmpeg پیدا نشد.")
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    timeout = max(120, min(900, 60 + int(len(text) * 0.3)))
+    with tempfile.TemporaryDirectory(prefix="rsai-piper-", dir=str(audio_path.parent)) as temp:
+        text_file = Path(temp) / "speech.txt"
+        wav_file = Path(temp) / "speech.wav"
+        text_file.write_text(text, encoding="utf-8")
+        result = subprocess.run(
+            [
+                str(piper), "--model", str(model), "--config", str(config),
+                "--input_file", str(text_file), "--output_file", str(wav_file),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, check=False, cwd=str(engine_dir),
+        )
+        if result.returncode != 0 or not wav_file.is_file() or wav_file.stat().st_size < 1024:
+            detail = (result.stderr or result.stdout or "Piper هیچ صدایی تولید نکرد").strip()[-500:]
+            raise RuntimeError("ساخت صدای آفلاین فارسی ناموفق بود: " + detail)
+        _run_ffmpeg(
+            str(encoder),
+            ["-i", str(wav_file), "-vn", "-codec:a", "libmp3lame", "-q:a", "4", str(audio_path)],
+        )
+    if not audio_path.is_file() or audio_path.stat().st_size < 1024:
+        raise RuntimeError("فایل MP3 خروجی Piper ساخته نشد.")
+    _write_fallback_subtitles(text, audio_path, subtitles_path, str(encoder))
+
+
+def _gtts_fallback(
+    text: str,
+    language: str,
+    audio_path: Path,
+    subtitles_path: Path | None,
+    ffmpeg: str | None,
+) -> None:
+    """Use Google Translate TTS for English/Russian if Edge TTS is refusing connections."""
+    if language not in {"en", "ru"}:
+        raise RuntimeError("Google TTS جایگزین مناسبی برای این زبان نیست.")
+    try:
+        from gtts import gTTS
+    except ImportError as exc:
+        raise RuntimeError("بستهٔ جایگزین gTTS نصب نیست.") from exc
+    gTTS(text=text, lang=language, slow=False).save(str(audio_path))
+    if not audio_path.is_file() or audio_path.stat().st_size < 1024:
+        raise RuntimeError("سرویس جایگزین گفتار فایل صوتی معتبر نداد.")
+    _write_fallback_subtitles(text, audio_path, subtitles_path, ffmpeg)
+
+
+def make_tts(
+    text: str,
+    language: str,
+    voice: str,
+    audio_path: Path,
+    subtitles_path: Path | None,
+    ffmpeg: str | None = None,
+) -> str:
+    language = (language or "fa").lower().split("-")[0]
+    selected_voice = voice or VOICE_DEFAULTS.get(language, VOICE_DEFAULTS["fa"])
+    try:
+        asyncio.run(_edge_tts_stream(text, selected_voice, audio_path, subtitles_path))
+        return "edge-tts"
+    except Exception as edge_error:
+        # A failed WebSocket may have left an incomplete MP3/SRT behind.
+        audio_path.unlink(missing_ok=True)
+        if subtitles_path:
+            subtitles_path.unlink(missing_ok=True)
+        try:
+            edge_error_name = type(edge_error).__name__
+            if language == "fa":
+                _piper_fallback(text, audio_path, subtitles_path, ffmpeg)
+                return f"piper-fa_IR-amir-medium (offline fallback; Edge TTS={edge_error_name})"
+            if language in {"en", "ru"}:
+                _gtts_fallback(text, language, audio_path, subtitles_path, ffmpeg)
+                return f"gTTS-{language} (online fallback; Edge TTS={edge_error_name})"
+            raise RuntimeError(f"برای زبان {language} جایگزین گفتار تنظیم نشده است.")
+        except Exception as fallback_error:
+            raise RuntimeError(
+                "سرویس اصلی Microsoft Edge TTS صدا را نپذیرفت (خطای 403 یا خطای اتصال). "
+                f"جایگزین صدا هم موفق نشد: {fallback_error}. "
+                "راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
+            ) from fallback_error
 
 
 def _run_ffmpeg(ffmpeg: str, args: list[str]) -> None:

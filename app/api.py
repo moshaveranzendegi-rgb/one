@@ -59,7 +59,7 @@ async def index()->HTMLResponse:
 
 @app.get("/api/health")
 async def health()->dict[str,Any]:
-    return {"ok":True,"app":"RS-ai","version":"0.4.2","auth_required":True}
+    return {"ok":True,"app":"RS-ai","version":"0.4.3","auth_required":True}
 
 @app.get("/api/status")
 async def status(x_rs_ai_token:str|None=Header(default=None))->dict[str,Any]:
