@@ -147,11 +147,41 @@ jobs:
           Get-ChildItem dist-packages -File | ForEach-Object {
             if ($_.Length -ge 200000000 -and $_.Name -notmatch '\.zip$') { throw "Download part is >= 200 MB: $($_.Name)" }
           }
+      - name: Publish permanent Windows and source downloads
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = 'release-assets/windows'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $names = @(
+            'RS-ai-Windows-Portable.zip', 'RS-ai-Windows-Portable.sha256.txt',
+            'RS-ai-Windows-Setup.zip', 'RS-ai-Windows-Setup.sha256.txt',
+            'RS-ai-Complete-Source.zip', 'RS-ai-Complete-Source.sha256.txt',
+            'RS-ai-source.zip', 'RS-ai-source.sha256.txt'
+          )
+          foreach ($name in $names) {
+            $source = Join-Path 'dist-packages' $name
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing download artifact: $source" }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $dest $name) -Force
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- (Join-Path $dest '*')
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m 'Publish RS ai 0.4.0 Windows portable downloads'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit permanent download files.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not push permanent download files.' }
+          }
       - name: Upload Windows installer parts and source packages
         uses: actions/upload-artifact@v6
         with:
           name: RS-ai-Windows-Distribution
-          path: dist-packages/*
+          path: |
+            dist-packages/*.zip
+            dist-packages/*.sha256.txt
+            dist-packages/*.part*
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
