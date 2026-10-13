@@ -81,13 +81,24 @@ def get_runtime_status() -> dict[str, Any]:
     sadtalker_ready = False
     sadtalker_message = "نصب نشده؛ برای رایانهٔ بدون GPU انویدیا، tools\\setup_sadtalker_cpu.bat را اجرا کن"
     if sadtalker_files_ready:
+        # Avoid importing inference.py during every status refresh: its transitive imports
+        # can trigger heavyweight model downloads and make the UI appear frozen. The setup
+        # installer performs the full inference import once; runtime status only checks
+        # that the isolated environment contains the essential packages.
+        probe = (
+            "import importlib.util, sys; "
+            "mods=('torch','safetensors','cv2','scipy'); "
+            "missing=[m for m in mods if importlib.util.find_spec(m) is None]; "
+            "print('Missing modules: '+','.join(missing) if missing else 'SadTalker packages present'); "
+            "sys.exit(1 if missing else 0)"
+        )
         sadtalker_ready, sadtalker_message = _command_version(
-            [str(sadtalker_python), "-c", "import inference; import torch; print('SadTalker CPU dependencies ready')"],
-            timeout=35,
+            [str(sadtalker_python), "-c", probe],
+            timeout=8,
             cwd=str(sadtalker_dir),
         )
         if not sadtalker_ready:
-            sadtalker_message = "فایل‌ها وجود دارند، اما بررسی وابستگی‌های SadTalker شکست خورد: " + sadtalker_message
+            sadtalker_message = "فایل‌ها وجود دارند، اما بعضی وابستگی‌های SadTalker ناقص‌اند: " + sadtalker_message
 
     avatar_engine_id = select_avatar_engine(bool(wsl_gpu and omni_ready), bool(sadtalker_ready))
     avatar_engine_label = {

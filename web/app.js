@@ -8,7 +8,7 @@
     en: [{value:'en-US-JennyNeural', label:'Jenny · Female'}, {value:'en-US-GuyNeural', label:'Guy · Male'}],
     ru: [{value:'ru-RU-SvetlanaNeural', label:'Светлана · женский'}, {value:'ru-RU-DmitryNeural', label:'Дмитрий · мужской'}]
   };
-  const statusNames = {queued:'در صف', running:'در حال ساخت', completed:'تکمیل شد', failed:'ناموفق', cancelled:'لغو شد'};
+  const statusNames = {queued:'در صف', running:'در حال ساخت', awaiting_cloud:'منتظر GPU ابری', completed:'تکمیل شد', failed:'ناموفق', cancelled:'لغو شد'};
   const capabilityNames = {
     ffmpeg:['FFmpeg و پردازش ویدئو', s => `${s.version || 'نسخه نامشخص'}${s.subtitle_filter ? ' · زیرنویس آماده' : ' · فیلتر زیرنویس ندارد'}`],
     wsl:['محیط WSL2 / GPU', s => s.message || ''],
@@ -88,13 +88,14 @@
       const list = $('capabilityList'); list.replaceChildren();
       Object.keys(capabilityNames).forEach(k => { if (s[k]) list.append(capabilityRow(k,s[k])); });
       const engineId = s.avatar_engine?.id || 'none';
-      const canGenerate = Boolean(s.ffmpeg?.ready && s.avatar_engine?.ready);
+      const cloudMode = $('engineMode').value === 'cloud';
+      const canGenerate = Boolean(s.ffmpeg?.ready && (s.avatar_engine?.ready || cloudMode));
       $('serverBadge').className = 'status-badge ' + (canGenerate ? 'ready' : 'warn');
       $('serverBadge').lastChild.textContent = !canGenerate
         ? 'نیاز به نصب موتور آواتار'
-        : (engineId === 'sadtalker_cpu' ? 'موتور CPU آماده است · حرکت چهره و سر' : 'موتور GPU آماده است');
+        : (cloudMode ? 'آماده‌سازی بستهٔ GPU ابری' : (engineId === 'sadtalker_cpu' ? 'موتور CPU آماده است · حرکت چهره و سر' : 'موتور GPU آماده است'));
 
-      const cpuMode = engineId === 'sadtalker_cpu';
+      const cpuMode = engineId === 'sadtalker_cpu' && $('engineMode').value !== 'cloud';
       const bodyOption = $('bodyMode').querySelector('option[value="complete"]');
       if (bodyOption) bodyOption.disabled = cpuMode;
       if (cpuMode && $('bodyMode').value === 'complete') $('bodyMode').value = 'keep';
@@ -128,6 +129,7 @@
       const message=document.createElement('p'); message.textContent=item.message || '';
       card.append(top,message);
       if (item.status === 'completed') { const a=document.createElement('a'); a.href=`/api/jobs/${item.id}/download`; a.textContent='دریافت فایل'; a.addEventListener('click',e=>{e.preventDefault();download(item.id)});card.append(a); }
+      else if (item.status === 'awaiting_cloud') { const a=document.createElement('a'); a.href='#'; a.textContent='دانلود بستهٔ GPU ابری'; a.addEventListener('click',e=>{e.preventDefault();downloadCloudPackage(item.id)});card.append(a); const resume=document.createElement('a');resume.href='#';resume.textContent='ادامهٔ پروژه';resume.addEventListener('click',e=>{e.preventDefault();showActiveJob(item.id);$('activeJobPanel').scrollIntoView({behavior:'smooth',block:'start'});});card.append(resume); }
       root.append(card);
     });
   }
@@ -135,7 +137,7 @@
     try { const data = await api('/api/jobs'); $('todayCount').textContent=toPersianDigits(data.today_count || 0); renderHistory(data.items); } catch (_) { /* status view reports auth errors */ }
   }
   function showActiveJob(id) {
-    currentJobId=id; $('activeJobPanel').classList.remove('hidden'); $('jobError').classList.add('hidden'); $('jobResult').classList.add('hidden'); $('downloadLink').classList.add('hidden'); $('jobStatus').textContent='در صف'; $('progressBar').style.width='0%';
+    currentJobId=id; $('activeJobPanel').classList.remove('hidden'); $('jobError').classList.add('hidden'); $('jobResult').classList.add('hidden'); $('downloadLink').classList.add('hidden'); $('cloudActionPanel').classList.add('hidden'); $('cloudImportMessage').textContent=''; $('jobStatus').textContent='در صف'; $('progressBar').style.width='0%';
     if (pollHandle) clearInterval(pollHandle); pollJob(); pollHandle=setInterval(pollJob,2500);
   }
   async function pollJob() {
@@ -146,6 +148,7 @@
       $('progressBar').style.width=`${Math.max(0,Math.min(100,job.progress || 0))}%`;
       $('progressText').textContent=toPersianDigits(job.progress || 0)+'٪';
       $('progressMessage').textContent=job.message || '';
+      if (job.status==='awaiting_cloud') { $('cloudActionPanel').classList.remove('hidden'); $('cloudPackageLink').onclick=(e)=>{e.preventDefault();downloadCloudPackage(job.id)}; $('createButton').disabled=false; clearInterval(pollHandle); pollHandle=null; refreshJobs(); }
       if (job.status==='failed') { $('jobError').classList.remove('hidden'); $('jobError').textContent=job.error || 'خطای نامشخص'; $('createButton').disabled=false; clearInterval(pollHandle); pollHandle=null; refreshJobs(); }
       if (job.status==='completed') { $('jobResult').classList.remove('hidden'); $('jobResult').textContent=`ذخیره شد: ${job.output_path || ''}`; $('downloadLink').classList.remove('hidden'); $('downloadLink').href='#'; $('downloadLink').onclick=(e)=>{e.preventDefault();download(job.id)}; $('createButton').disabled=false; clearInterval(pollHandle); pollHandle=null; refreshJobs(); }
     } catch (error) { $('progressMessage').textContent=error.message; }
@@ -157,6 +160,17 @@
       const blob=await response.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a');a.href=url;a.download=`RS-ai-${id.slice(0,8)}.mp4`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
     } catch(error) { alert(error.message); }
   }
+  async function downloadCloudPackage(id) {
+    try {
+      const response=await fetch(`/api/jobs/${id}/cloud-package`,{headers:{'X-RS-AI-Token':getToken()}});
+      if (!response.ok) { const body=await response.json().catch(()=>({})); throw new Error(body.detail || 'دانلود بستهٔ GPU ابری ناموفق بود.'); }
+      const blob=await response.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a');a.href=url;a.download=`RS-ai-cloud-${id.slice(0,8)}.zip`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+    } catch(error) { alert(error.message); }
+  }
+  function updateEngineMode() {
+    const mode=$('engineMode').value;
+    $('createButton').querySelector('span').textContent=mode==='cloud'?'آماده‌سازی بستهٔ GPU ابری':mode==='cpu'?'ساخت پیش‌نویس چهره با CPU':'ساخت ویدئوی متحرک';
+  }
   $('language').addEventListener('change',updateVoices);
   $('audioSource').addEventListener('change',updateAudioMode);
   document.querySelectorAll('input[name="clothing_mode"]').forEach(el => el.addEventListener('change',updateClothingMode));
@@ -167,6 +181,16 @@
   $('scenario').addEventListener('input',()=> $('scenarioCount').textContent=toPersianDigits($('scenario').value.length)+' کاراکتر');
   $('refreshStatus').addEventListener('click',refreshStatus); $('openSettings').addEventListener('click',()=>{ $('activeJobPanel').classList.add('hidden'); document.querySelector('.status-panel').scrollIntoView({behavior:'smooth',block:'center'}); refreshStatus(); });
   $('saveToken').addEventListener('click',async()=>{ const value=$('tokenInput').value.trim(); if(!value){$('tokenMessage').textContent='توکن را وارد کن.';return;}localStorage.setItem('rsai-token',value);const data=await refreshStatus();if(data){$('tokenPanel').classList.add('hidden');$('tokenMessage').textContent='اتصال برقرار شد.';refreshJobs();}else{localStorage.removeItem('rsai-token');$('tokenMessage').textContent='توکن معتبر نیست.';} });
+  $('engineMode').addEventListener('change',()=>{updateEngineMode();refreshStatus();});
+  $('cloudImportButton').addEventListener('click',async()=>{
+    if(!currentJobId){$('cloudImportMessage').textContent='ابتدا پروژهٔ منتظر GPU ابری را باز کن.';return;}
+    const file=$('cloudResultFile').files[0];
+    if(!file){$('cloudImportMessage').textContent='فایل MP4 خروجی دفترچه را انتخاب کن.';return;}
+    const data=new FormData();data.append('video',file);$('cloudImportButton').disabled=true;$('cloudImportMessage').textContent='در حال بررسی و نهایی‌سازی فایل…';
+    try{await api(`/api/jobs/${currentJobId}/cloud-result`,{method:'POST',body:data});$('cloudImportMessage').textContent='خروجی وارد شد؛ در حال تکمیل پروژه…';await pollJob();await refreshJobs();}
+    catch(error){$('cloudImportMessage').textContent=error.message;}
+    finally{$('cloudImportButton').disabled=false;}
+  });
   form.addEventListener('submit',async(e)=>{
     e.preventDefault(); $('formMessage').textContent=''; $('formMessage').className='form-message';
     if (!getToken()) { revealTokenPanel(); return; }
@@ -178,8 +202,8 @@
     $('createButton').disabled=true; $('createButton').querySelector('span').textContent='در حال ثبت پروژه…';
     try { const result=await api('/api/jobs',{method:'POST',body:data}); $('formMessage').textContent=`پروژه ثبت شد: ${result.id.slice(0,8)}`; $('formMessage').classList.add('success'); showActiveJob(result.id); await refreshJobs(); $('activeJobPanel').scrollIntoView({behavior:'smooth',block:'start'}); }
     catch(error) { $('formMessage').textContent=error.message; $('formMessage').classList.add('error'); $('createButton').disabled=false; }
-    finally { $('createButton').querySelector('span').textContent='ساخت ویدئوی متحرک'; }
+    finally { updateEngineMode(); }
   });
-  processHashToken(); updateVoices(); updateAudioMode(); updateClothingMode(); updateOnepieceAvailability();
+  processHashToken(); updateVoices(); updateAudioMode(); updateClothingMode(); updateOnepieceAvailability(); updateEngineMode();
   refreshStatus().then(data=>{if(data){$('tokenPanel').classList.add('hidden');refreshJobs();}else revealTokenPanel();});
 })();

@@ -15,6 +15,7 @@ def validate_form(form:dict[str,Any])->list[str]:
     if form.get("audio_source") not in {"tts","upload"}:e.append("روش صدا معتبر نیست.")
     if form.get("body_mode") not in {"keep","complete"}:e.append("حالت تکمیل بدن معتبر نیست.")
     if form.get("clothing_mode") not in {"current","custom"}:e.append("حالت لباس معتبر نیست.")
+    if form.get("engine_mode","cloud") not in {"cloud","auto","cpu"}:e.append("مسیر تولید آواتار معتبر نیست.")
     g=form.get("garments") or {}
     if form.get("clothing_mode")=="current" and any(g.values()):e.append("وقتی لباس فعلی انتخاب شده، ورودی لباس‌های جدید باید خالی باشد.")
     if g.get("onepiece") and (g.get("upper") or g.get("lower")):e.append("لباس یک‌تکه را نمی‌توان هم‌زمان با بالاتنه یا پایین‌تنه اعمال کرد.")

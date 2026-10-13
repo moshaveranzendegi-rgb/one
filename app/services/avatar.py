@@ -94,10 +94,22 @@ def _generate_sadtalker_cpu(image_path: Path, audio_path: Path, job_dir: Path, p
     ]
     if progress:
         progress(55, "SadTalker در حال متحرک‌سازی چهره و سر روی CPU است؛ روی پردازندهٔ قدیمی ممکن است زمان‌بر باشد.")
+    # SadTalker's internal video muxer invokes the bare `ffmpeg` command. The main
+    # RS ai app can locate C:\\ffmpeg\\bin\\ffmpeg.exe even when Windows PATH omits it,
+    # so pass that directory explicitly to the child process as well.
+    child_env = os.environ.copy()
+    ffmpeg_exe = os.getenv("RS_AI_FFMPEG")
+    if not ffmpeg_exe and os.name == "nt":
+        candidate = Path(r"C:\ffmpeg\bin\ffmpeg.exe")
+        if candidate.is_file():
+            ffmpeg_exe = str(candidate)
+    if ffmpeg_exe:
+        ffmpeg_dir = str(Path(ffmpeg_exe).expanduser().resolve().parent)
+        child_env["PATH"] = ffmpeg_dir + os.pathsep + child_env.get("PATH", "")
     try:
         result = subprocess.run(
             command, cwd=str(root), capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=10_800,
+            encoding="utf-8", errors="replace", timeout=10_800, env=child_env,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("اجرای SadTalker بیش از ۳ ساعت طول کشید و متوقف شد. ابتدا یک صدای کوتاه‌تر آزمایش کن.") from exc

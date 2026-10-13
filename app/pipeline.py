@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import traceback
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -73,13 +74,20 @@ def run_job(job_id: str) -> None:
         if not status["ffmpeg"]["ready"] or not ffmpeg:
             raise RuntimeError("FFmpeg نصب نیست یا مسیر آن نامعتبر است. ابتدا FFmpeg را نصب کن یا مسیر RS_AI_FFMPEG را تنظیم کن.")
         engine_info = status.get("avatar_engine", {})
-        engine = engine_info.get("id", "none")
-        if engine not in {"omniavatar", "sadtalker_cpu"}:
-            raise RuntimeError(
-                "هیچ موتور آواتاری نصب و آماده نیست. برای رایانهٔ فعلی بدون GPU انویدیا، "
-                "فایل tools\\setup_sadtalker_cpu.bat را اجرا کن. این موتور چهره و سر را متحرک می‌کند، "
-                "اما حرکت کامل دست‌ها و بدن را تولید نمی‌کند."
-            )
+        detected_engine = engine_info.get("id", "none")
+        requested_engine = form.get("engine_mode", "cloud")
+        if requested_engine == "cloud":
+            # Default path for Intel-only systems: prepare a portable input bundle for
+            # a user-controlled free GPU notebook. No photo/audio is uploaded automatically.
+            engine = "cloud"
+        elif requested_engine == "cpu":
+            if detected_engine != "sadtalker_cpu":
+                raise RuntimeError("موتور CPU آماده نیست. از مسیر GPU ابری استفاده کن یا ابتدا نصب‌کنندهٔ CPU را کامل کن.")
+            engine = "sadtalker_cpu"
+        else:
+            engine = detected_engine if detected_engine in {"omniavatar", "sadtalker_cpu"} else "cloud"
+        if engine == "cloud" and (form.get("body_mode") == "complete" or (form.get("clothing_mode") == "custom" and any(form.get("garments", {}).get(k) for k in ("upper", "lower", "onepiece")))):
+            raise RuntimeError("در مسیر GPU ابری آزمایشی، تکمیل بدن و تعویض لباس خودکار نیست. ابتدا «حفظ قاب موجود» و «لباس فعلی حفظ شود» را انتخاب کن.")
         if engine == "sadtalker_cpu":
             if form.get("body_mode") == "complete":
                 raise RuntimeError("تکمیل بدن به مدل جداگانه نیاز دارد و در حالت SadTalker CPU فعال نیست؛ حالت بدن را روی «حفظ قاب موجود» بگذار.")
@@ -91,7 +99,7 @@ def run_job(job_id: str) -> None:
         environment = Path(form["files"]["environment"]) if form["files"].get("environment") else None
         if environment:
             _check_image(environment, "محیط")
-        engine_label = "OmniAvatar GPU" if engine == "omniavatar" else "SadTalker CPU (چهره و سر)"
+        engine_label = {"omniavatar": "OmniAvatar GPU", "sadtalker_cpu": "SadTalker CPU (چهره و سر)", "cloud": "بستهٔ انتقال به GPU ابری"}.get(engine, "موتور آواتار")
         _progress(job_id, job_dir, 8, f"موتور انتخاب‌شده: {engine_label}")
 
         audio_file = job_dir / "spoken.mp3"
@@ -144,6 +152,26 @@ def run_job(job_id: str) -> None:
         _progress(job_id, job_dir, 48, "ترکیب آواتار با محیط انتخابی")
         composite_scene(current_avatar, environment, scene_image, form["video_ratio"])
         prompt = _environment_prompt(form)
+        if engine == "cloud":
+            _progress(job_id, job_dir, 60, "آماده‌سازی بستهٔ امن برای اجرای اختیاری روی GPU ابری")
+            package_path = job_dir / "RS-ai-cloud-package.zip"
+            manifest = {
+                "app": "RS-ai", "job_id": job_id, "purpose": "avatar-motion-cloud-handoff",
+                "audio_duration_seconds": duration, "language": form["language"],
+                "video_ratio": form["video_ratio"], "video_format": form["video_format"],
+                "subtitles_requested": bool(subtitle_path),
+                "privacy_note": "This package contains the reference image and speech audio. Upload it to a cloud GPU only if you consent to that transfer."
+            }
+            with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.write(scene_image, "reference.png")
+                archive.write(model_audio, "speech_16k.wav")
+                archive.writestr("prompt.txt", prompt)
+                archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+                if subtitle_path and subtitle_path.is_file():
+                    archive.write(subtitle_path, "captions.srt")
+            db.update_job(job_id, status="awaiting_cloud", progress=65, message="بسته آماده است؛ دانلود کن و فقط در صورت رضایت، در نشست GPU ابری اجرا کن.")
+            _log(job_dir, f"CLOUD_PACKAGE_READY: {package_path}")
+            return
         raw_video = generate_avatar(
             scene_image, model_audio, prompt, job_dir,
             lambda v, m: _progress(job_id, job_dir, v, m),

@@ -50,6 +50,13 @@ class ValidationTests(unittest.TestCase):
         form["video_format"] = "wmv"
         self.assertTrue(any("فرمت" in x for x in validate_form(form)))
 
+    def test_cloud_engine_mode_is_valid_and_unknown_mode_rejected(self):
+        form = self._valid()
+        form["engine_mode"] = "cloud"
+        self.assertEqual(validate_form(form), [])
+        form["engine_mode"] = "magic"
+        self.assertTrue(any("مسیر تولید آواتار" in x for x in validate_form(form)))
+
 
 if __name__ == "__main__":
     unittest.main()
