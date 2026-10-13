@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from functools import lru_cache
 from pathlib import Path
 from PIL import Image, ImageOps
 
@@ -14,12 +16,25 @@ def _fit_cover(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return resized.crop((left, top, left + width, top + height))
 
 
+@lru_cache(maxsize=2)
+def _background_session(model_name: str):
+    from rembg import new_session
+    return new_session(model_name)
+
+
 def _remove_background(image: Image.Image) -> Image.Image:
     try:
         from rembg import remove
     except ImportError as exc:
         raise RuntimeError("برای قرار دادن آواتار روی عکس محیط، حذف پس‌زمینه لازم است. فایل install_vision.bat را اجرا کن؛ برنامه پس‌زمینه را به‌صورت اشتباه حدس نمی‌زند.") from exc
-    result = remove(image.convert("RGBA"))
+    # Use the lightweight U2NetP model on CPU-only PCs to avoid the several-GB
+    # peak memory observed with full U2Net. Advanced users may override this with
+    # RS_AI_REMBG_MODEL=u2net for sharper edges at higher memory/CPU cost.
+    model_name = (os.getenv("RS_AI_REMBG_MODEL") or "u2netp").strip()
+    try:
+        result = remove(image.convert("RGBA"), session=_background_session(model_name))
+    except Exception as exc:
+        raise RuntimeError(f"حذف پس‌زمینه با مدل {model_name} ناموفق بود: {exc}") from exc
     if not isinstance(result, Image.Image):
         raise RuntimeError("حذف پس‌زمینه خروجی تصویر معتبری نداد.")
     return result.convert("RGBA")

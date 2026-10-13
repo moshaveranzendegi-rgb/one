@@ -112,9 +112,13 @@ def get_runtime_status() -> dict[str, Any]:
     except ImportError:
         tts_ready = False
     try:
+        from importlib.metadata import version as distribution_version
         import rembg  # noqa: F401
+        distribution_version("pymatting")
         rembg_ready = True
-    except ImportError:
+    except Exception:
+        # A frozen package can contain rembg's Python code without the required
+        # pymatting metadata; report the feature unavailable instead of a false positive.
         rembg_ready = False
     try:
         import faster_whisper  # noqa: F401

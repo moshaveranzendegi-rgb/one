@@ -99,7 +99,7 @@ jobs:
         run: |
           python -m venv .venv
           .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
-          .\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller httpx
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-vision.txt pyinstaller httpx
       - name: Build Windows portable app
         shell: pwsh
         run: |
@@ -169,7 +169,7 @@ jobs:
           git add -- (Join-Path $dest '*')
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m 'Publish RS ai 0.4.3 Windows portable downloads'
+            git commit -m 'Publish RS ai 0.4.4 Windows portable downloads'
             if ($LASTEXITCODE -ne 0) { throw 'Could not commit permanent download files.' }
             git push origin HEAD:main
             if ($LASTEXITCODE -ne 0) { throw 'Could not push permanent download files.' }
@@ -256,8 +256,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.4.3-build.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" --title "RS ai $TAG" --notes "RS ai 0.4.3. Adds resilient text-to-speech fallback: local Persian Piper and Google Translate TTS for English/Russian when Microsoft Edge TTS returns 403. Unit/API tests, packaged Windows /api/health smoke test, mobile scrolling CSS checks, and Android debug APK build completed in GitHub Actions. Intel-only PCs can prepare a ZIP for the experimental free cloud-GPU handoff; Colab GPU availability is not guaranteed and uploads are manual. SadTalker CPU remains a face/lips/head-only draft engine; OmniAvatar GPU weights are not bundled."
+          TAG="v0.4.4-build.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --title "RS ai $TAG" --notes "RS ai 0.4.4. Fixes Windows background-removal packaging by copying pymatting metadata and including CPU vision dependencies. Uses the lightweight U2NetP model by default to reduce peak RAM; advanced users may choose full U2Net with RS_AI_REMBG_MODEL=u2net. Retains TTS fallback: local Persian Piper and Google Translate TTS for English/Russian when Microsoft Edge TTS returns 403. Unit/API tests, packaged Windows /api/health smoke test, mobile scrolling CSS checks, and Android debug APK build completed in GitHub Actions. Intel-only PCs can prepare a ZIP for the experimental free cloud-GPU handoff; Colab GPU availability is not guaranteed and uploads are manual. SadTalker CPU remains a face/lips/head-only draft engine; OmniAvatar GPU weights are not bundled."
           gh release upload "$TAG" release-assets/windows/* release-assets/android/* --clobber
           echo "Published release: $TAG"
       - name: Remove temporary source transfer chunks
