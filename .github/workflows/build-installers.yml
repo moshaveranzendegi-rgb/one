@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'source-bundle/chunks/**'
+      - '.github/workflows/**'
       - 'app/**'
       - 'web/**'
       - 'android/**'
