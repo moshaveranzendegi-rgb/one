@@ -75,17 +75,22 @@ def run_job(job_id: str) -> None:
             raise RuntimeError("FFmpeg نصب نیست یا مسیر آن نامعتبر است. ابتدا FFmpeg را نصب کن یا مسیر RS_AI_FFMPEG را تنظیم کن.")
         engine_info = status.get("avatar_engine", {})
         detected_engine = engine_info.get("id", "none")
-        requested_engine = form.get("engine_mode", "cloud")
+        # Local-first default: never route work to a cloud service unless the user
+        # explicitly selects it in the form. "auto" means the best installed local engine.
+        requested_engine = form.get("engine_mode", "auto")
         if requested_engine == "cloud":
-            # Default path for Intel-only systems: prepare a portable input bundle for
-            # a user-controlled free GPU notebook. No photo/audio is uploaded automatically.
             engine = "cloud"
         elif requested_engine == "cpu":
             if detected_engine != "sadtalker_cpu":
-                raise RuntimeError("موتور CPU آماده نیست. از مسیر GPU ابری استفاده کن یا ابتدا نصب‌کنندهٔ CPU را کامل کن.")
+                raise RuntimeError("موتور SadTalker CPU آماده نیست. از «وضعیت موتور‌ها» نصب آن را بررسی کن.")
             engine = "sadtalker_cpu"
         else:
-            engine = detected_engine if detected_engine in {"omniavatar", "sadtalker_cpu"} else "cloud"
+            engine = detected_engine if detected_engine in {"omniavatar", "sadtalker_cpu"} else "none"
+            if engine == "none":
+                raise RuntimeError(
+                    "هیچ موتور محلی آماده نیست. برای استفاده روی همین رایانه، "
+                    "SadTalker CPU را از پوشه tools نصب کن؛ مسیر GPU ابری فقط با انتخاب صریح اجرا می‌شود."
+                )
         if engine == "cloud" and (form.get("body_mode") == "complete" or (form.get("clothing_mode") == "custom" and any(form.get("garments", {}).get(k) for k in ("upper", "lower", "onepiece")))):
             raise RuntimeError("در مسیر GPU ابری آزمایشی، تکمیل بدن و تعویض لباس خودکار نیست. ابتدا «حفظ قاب موجود» و «لباس فعلی حفظ شود» را انتخاب کن.")
         if engine == "sadtalker_cpu":
