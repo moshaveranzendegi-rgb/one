@@ -71,6 +71,17 @@ if (-not (Test-Path (Join-Path $EngineHome 'inference.py'))) {
 }
 if (-not (Test-Path (Join-Path $EngineHome 'inference.py'))) { throw 'SadTalker inference.py is missing.' }
 
+# Persist RS ai's Windows-safe FFmpeg resolver. The official upstream file uses a
+# bare "ffmpeg" command, which fails if RS-ai.exe was launched without the PATH.
+$VideoIoPatch = Join-Path $PSScriptRoot 'sadtalker_videoio.py'
+$VideoIoTarget = Join-Path $EngineHome 'src\utils\videoio.py'
+if (-not (Test-Path -LiteralPath $VideoIoPatch)) {
+    throw "RS ai FFmpeg patch template is missing: $VideoIoPatch"
+}
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $VideoIoTarget) | Out-Null
+Copy-Item -LiteralPath $VideoIoPatch -Destination $VideoIoTarget -Force
+Write-Host 'Applied RS ai Windows-safe FFmpeg handling to SadTalker.' -ForegroundColor Green
+
 Write-Host '[3/5] Creating isolated CPU-only Python environment...' -ForegroundColor Cyan
 if (-not (Test-Path $VenvPython)) {
     & $Python38 -m venv (Join-Path $EngineHome '.venv')
