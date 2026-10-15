@@ -23,7 +23,7 @@ def _ffmpeg_executable():
     candidates = [
         os.environ.get("RS_AI_FFMPEG"),
         shutil.which("ffmpeg"),
-        r"C:\\ffmpeg\\bin\\ffmpeg.exe" if os.name == "nt" else None,
+        r"C:\ffmpeg\bin\ffmpeg.exe" if os.name == "nt" else None,
     ]
     for candidate in candidates:
         if not candidate:
