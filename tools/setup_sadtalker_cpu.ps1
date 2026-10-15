@@ -31,7 +31,7 @@ $Python38 = Get-Python38Path
 if (-not $Python38) {
     $Installer = Join-Path $env:TEMP 'python-3.8.10-amd64.exe'
     $InstallerUrl = 'https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe'
-    Write-Host '[1/5] Downloading isolated Python 3.8.10 from python.org...' -ForegroundColor Cyan
+    Write-Host '[1/6] Downloading isolated Python 3.8.10 from python.org...' -ForegroundColor Cyan
     if (-not (Test-Path $Installer) -or (Get-Item $Installer).Length -lt 10MB) {
         if (Get-Command 'curl.exe' -ErrorAction SilentlyContinue) {
             & curl.exe -fL --retry 4 --retry-delay 2 --retry-connrefused -o $Installer $InstallerUrl
@@ -53,7 +53,7 @@ if (-not $Python38) {
     Write-Host "Using Python 3.8: $Python38"
 }
 
-Write-Host '[2/5] Getting official SadTalker source...' -ForegroundColor Cyan
+Write-Host '[2/6] Getting official SadTalker source...' -ForegroundColor Cyan
 if (-not (Test-Path (Join-Path $EngineHome 'inference.py'))) {
     $RepoZip = Join-Path $env:TEMP 'RS-ai-SadTalker-main.zip'
     $ExtractDir = Join-Path $env:TEMP 'RS-ai-SadTalker-extract'
@@ -71,7 +71,15 @@ if (-not (Test-Path (Join-Path $EngineHome 'inference.py'))) {
 }
 if (-not (Test-Path (Join-Path $EngineHome 'inference.py'))) { throw 'SadTalker inference.py is missing.' }
 
-Write-Host '[3/5] Creating isolated CPU-only Python environment...' -ForegroundColor Cyan
+$PatchScript = Join-Path $PSScriptRoot 'patch_sadtalker_cpu.py'
+if (-not (Test-Path -LiteralPath $PatchScript)) {
+    throw "RS ai CPU optimization patcher is missing: $PatchScript"
+}
+Write-Host '[3/6] Applying RS ai low-resource CPU preset...' -ForegroundColor Cyan
+& $Python38 $PatchScript $EngineHome
+if ($LASTEXITCODE -ne 0) { throw 'Could not apply the RS ai CPU preset to SadTalker.' }
+
+Write-Host '[4/6] Creating isolated CPU-only Python environment...' -ForegroundColor Cyan
 if (-not (Test-Path $VenvPython)) {
     & $Python38 -m venv (Join-Path $EngineHome '.venv')
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) { throw 'Could not create the SadTalker virtual environment.' }
@@ -83,7 +91,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not install CPU-only PyTorch. Review the
 & $VenvPython -m pip install --timeout 120 --retries 10 -r (Join-Path $EngineHome 'requirements.txt') 'opencv-python==4.8.1.78'
 if ($LASTEXITCODE -ne 0) { throw 'SadTalker dependencies did not install. Rerun to retry or send the complete error.' }
 
-Write-Host '[4/5] Downloading the 256px inference checkpoint and full-frame mapping weights...' -ForegroundColor Cyan
+Write-Host '[5/6] Downloading the 256px inference checkpoint and full-frame mapping weights...' -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $CheckpointDir | Out-Null
 
 function Get-ModelFile {
@@ -114,7 +122,7 @@ function Get-ModelFile {
 Get-ModelFile 'https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/SadTalker_V0.0.2_256.safetensors' (Join-Path $CheckpointDir 'SadTalker_V0.0.2_256.safetensors') 725066984
 Get-ModelFile 'https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2-rc/mapping_00109-model.pth.tar' (Join-Path $CheckpointDir 'mapping_00109-model.pth.tar') 155779231
 
-Write-Host '[5/5] Checking downloaded models and inference imports...' -ForegroundColor Cyan
+Write-Host '[6/6] Checking downloaded models and inference imports...' -ForegroundColor Cyan
 & $VenvPython -c "import inference; import torch; print('SadTalker ready; PyTorch', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
 if ($LASTEXITCODE -ne 0) { throw 'Model files downloaded but SadTalker imports failed. Save the complete error before retrying.' }
 
