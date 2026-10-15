@@ -171,5 +171,3 @@ if __name__ == "__main__":
     finally:
         server.server_close()
         log("stopped")
-
-[executed on device: DESKTOP-AG001JD (75030569-cef4-42ce-a3e2-0085550df642)]

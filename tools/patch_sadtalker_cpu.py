@@ -193,5 +193,3 @@ def _rsai_render_fps():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-[executed on device: DESKTOP-AG001JD (75030569-cef4-42ce-a3e2-0085550df642)]
