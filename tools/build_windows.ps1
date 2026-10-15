@@ -58,16 +58,17 @@ $portable = Join-Path (Get-Location) 'dist\RS-ai'
 Copy-Item -LiteralPath 'RUN_RS-ai_Portable.bat' -Destination $portable -Force
 Copy-Item -LiteralPath 'tools\setup_sadtalker_cpu.bat' -Destination $portable -Force
 Copy-Item -LiteralPath 'tools\setup_sadtalker_cpu.ps1' -Destination $portable -Force
+Copy-Item -LiteralPath 'tools\patch_sadtalker_cpu.py' -Destination $portable -Force
 $notebooks = Join-Path $portable 'notebooks'
 New-Item -ItemType Directory -Force -Path $notebooks | Out-Null
 Copy-Item -LiteralPath 'notebooks\RS-ai-OmniAvatar-Colab.ipynb' -Destination $notebooks -Force
 Copy-Item -LiteralPath 'CLOUD_GPU_GUIDE_FA.md' -Destination $portable -Force
 @'
-RS ai portable build 0.4.4
+RS ai portable build 0.4.5 — local CPU-first
 - Start with RUN_RS-ai_Portable.bat or RS-ai.exe.
-- Recommended on Intel-only PCs: choose cloud GPU handoff in the app, download the ZIP, run notebooks\RS-ai-OmniAvatar-Colab.ipynb in a GPU-enabled Colab session, then import the returned MP4 into the same job.
-- No image or audio is uploaded automatically. Free GPU availability and memory are not guaranteed; cloud upload/download remain manual.
-- SadTalker CPU is an optional draft engine for face, lips and head only; it does not generate realistic full-body or hand motion.
+- On Intel-only PCs, the default path is local SadTalker CPU with a low-resource preset (2 CPU threads, 8 generated frames/second); output motion is less smooth and still limited to face, lips and head.
+- Test a 3–5 second clip first. Long clips may take a very long time on older CPUs; full-body and realistic hand motion are not supported by this CPU engine.
+- GPU cloud handoff is optional and requires manual transfer. No image or audio is uploaded automatically, and free GPU availability is not guaranteed.
 - FFmpeg is required and is not bundled.
 - OmniAvatar GPU model weights are not bundled; the full-motion GPU engine requires a compatible NVIDIA GPU.
 - Keep the whole dist\RS-ai folder together; do not move RS-ai.exe alone.
