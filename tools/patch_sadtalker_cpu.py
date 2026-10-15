@@ -76,7 +76,7 @@ try:
     _CPU_THREADS = max(1, min(4, int(os.environ.get("RS_AI_SADTALKER_CPU_THREADS", _DEFAULT_CPU_THREADS))))
 except (TypeError, ValueError):
     _CPU_THREADS = _DEFAULT_CPU_THREADS
-os.environ.setdefault("RS_AI_SADTALKER_FPS", "8")
+os.environ.setdefault("RS_AI_SADTALKER_FPS", "12")
 for _thread_env in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_thread_env, str(_CPU_THREADS))
 
@@ -86,7 +86,7 @@ try:
     torch.set_num_interop_threads(1)
 except RuntimeError:
     pass
-print(f"RS ai CPU preset: torch_threads={_CPU_THREADS}, render_fps={os.environ.get('RS_AI_SADTALKER_FPS', '8')}")''',
+print(f"RS ai CPU preset: torch_threads={_CPU_THREADS}, render_fps={os.environ.get('RS_AI_SADTALKER_FPS', '12')}")''',
                     1,
                 )
             ],
@@ -100,9 +100,9 @@ print(f"RS ai CPU preset: torch_threads={_CPU_THREADS}, render_fps={os.environ.g
                     """    syncnet_mel_step_size = 16
     # Match audio/motion feature sampling to the lower CPU render frame rate.
     try:
-        fps = max(8, min(25, int(os.environ.get('RS_AI_SADTALKER_FPS', '8'))))
+        fps = max(8, min(25, int(os.environ.get('RS_AI_SADTALKER_FPS', '12'))))
     except (TypeError, ValueError):
-        fps = 8""",
+        fps = 12""",
                     1,
                 ),
                 (
@@ -134,7 +134,7 @@ import cv2
 
 def _rsai_render_fps():
     try:
-        return max(8, min(25, int(os.environ.get('RS_AI_SADTALKER_FPS', '8'))))
+        return max(8, min(25, int(os.environ.get('RS_AI_SADTALKER_FPS', '12'))))
     except (TypeError, ValueError):
         return 8
 """,
@@ -186,8 +186,8 @@ def _rsai_render_fps():
         print("Verification failed: SadTalker still contains a 25 FPS audio-length hardcode.", file=sys.stderr)
         return 1
 
-    print("SUCCESS: RS ai low-resource SadTalker preset is installed (2 CPU threads, 8 FPS by default).")
-    print("Note: lower FPS reduces runtime but the mouth/face motion will be less smooth.")
+    print("SUCCESS: RS ai CPU preset is installed (2 CPU threads, 12 FPS by default).")
+    print("Note: 12 FPS balances smoother motion with longer render time on older CPUs.")
     return 0
 
 

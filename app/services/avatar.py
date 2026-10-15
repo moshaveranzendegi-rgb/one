@@ -114,7 +114,9 @@ def _generate_sadtalker_cpu(image_path: Path, audio_path: Path, job_dir: Path, p
         "--source_image", str(image_path.resolve()),
         "--result_dir", str(result_dir),
         "--checkpoint_dir", str(checkpoint_dir),
-        "--cpu", "--size", "256", "--batch_size", "1", "--preprocess", "full",
+        "--cpu", "--size", "256", "--batch_size", "1",
+        "--expression_scale", os.getenv("RS_AI_SADTALKER_EXPRESSION_SCALE", "1.35"),
+        "--preprocess", "full",
     ]
     if progress:
         progress(55, "SadTalker در حال متحرک‌سازی چهره و سر روی CPU است؛ روی پردازندهٔ قدیمی ممکن است زمان‌بر باشد.")
@@ -125,7 +127,7 @@ def _generate_sadtalker_cpu(image_path: Path, audio_path: Path, job_dir: Path, p
     # Conservative CPU preset for older Intel-only Windows machines.
     cpu_threads = max(1, min(2, os.cpu_count() or 2))
     child_env.setdefault("RS_AI_SADTALKER_CPU_THREADS", str(cpu_threads))
-    child_env.setdefault("RS_AI_SADTALKER_FPS", "8")
+    child_env.setdefault("RS_AI_SADTALKER_FPS", "12")
     for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         child_env.setdefault(variable, str(cpu_threads))
 

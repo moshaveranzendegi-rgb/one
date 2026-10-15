@@ -207,7 +207,7 @@ def _gtts_fallback(
     ffmpeg: str | None,
 ) -> None:
     """Use Google Translate TTS for English/Russian if Edge TTS is refusing connections."""
-    if language not in {"en", "ru"}:
+    if language not in {"fa", "en", "ru"}:
         raise RuntimeError("Google TTS جایگزین مناسبی برای این زبان نیست.")
     try:
         from gtts import gTTS
@@ -237,21 +237,40 @@ def make_tts(
         audio_path.unlink(missing_ok=True)
         if subtitles_path:
             subtitles_path.unlink(missing_ok=True)
-        try:
-            edge_error_name = type(edge_error).__name__
-            if language == "fa":
-                _piper_fallback(text, audio_path, subtitles_path, ffmpeg)
-                return f"piper-fa_IR-amir-medium (offline fallback; Edge TTS={edge_error_name})"
-            if language in {"en", "ru"}:
-                _gtts_fallback(text, language, audio_path, subtitles_path, ffmpeg)
-                return f"gTTS-{language} (online fallback; Edge TTS={edge_error_name})"
-            raise RuntimeError(f"برای زبان {language} جایگزین گفتار تنظیم نشده است.")
-        except Exception as fallback_error:
+        edge_error_name = type(edge_error).__name__
+        if language not in {"fa", "en", "ru"}:
             raise RuntimeError(
-                "سرویس اصلی Microsoft Edge TTS صدا را نپذیرفت (خطای 403 یا خطای اتصال). "
-                f"جایگزین صدا هم موفق نشد: {fallback_error}. "
-                "راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
-            ) from fallback_error
+                f"سرویس Microsoft Edge TTS برای زبان {language} شکست خورد و جایگزینی تنظیم نشده است."
+            ) from edge_error
+
+        # Google TTS also supports Persian and uses HTTPS, which can work when the
+        # Edge TTS WebSocket handshake is blocked on some networks.
+        try:
+            _gtts_fallback(text, language, audio_path, subtitles_path, ffmpeg)
+            return f"gTTS-{language} (online fallback; Edge TTS={edge_error_name})"
+        except Exception as google_error:
+            audio_path.unlink(missing_ok=True)
+            if subtitles_path:
+                subtitles_path.unlink(missing_ok=True)
+
+            if language == "fa":
+                try:
+                    _piper_fallback(text, audio_path, subtitles_path, ffmpeg)
+                    return (
+                        "piper-fa_IR-amir-medium (offline fallback; "
+                        f"Edge TTS={edge_error_name}; Google TTS={type(google_error).__name__})"
+                    )
+                except Exception as piper_error:
+                    raise RuntimeError(
+                        "سرویس Microsoft Edge TTS شکست خورد؛ Google TTS فارسی هم در دسترس نبود؛ "
+                        f"صدای آفلاین Piper نیز ناموفق شد: {piper_error}. "
+                        "راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
+                    ) from piper_error
+
+            raise RuntimeError(
+                "سرویس Microsoft Edge TTS شکست خورد و جایگزین Google TTS هم ناموفق بود: "
+                f"{google_error}. راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
+            ) from google_error
 
 
 def _run_ffmpeg(ffmpeg: str, args: list[str]) -> None:
