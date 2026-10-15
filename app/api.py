@@ -152,7 +152,7 @@ async def create_job(
     garment_upper_type:str=Form(default="model"),garment_lower_type:str=Form(default="model"),garment_onepiece_type:str=Form(default="model"),
     scenario:str=Form(default=""),language:str=Form(default="fa"),voice:str=Form(default="fa-IR-DilaraNeural"),audio_source:str=Form(default="tts"),
     body_mode:str=Form(default="keep"),clothing_mode:str=Form(default="current"),style:str=Form(default="professional"),movement:str=Form(default="natural"),
-    engine_mode:str=Form(default="cloud"),subtitles:bool=Form(default=True),video_ratio:str=Form(default="9:16"),video_format:str=Form(default="mp4"),
+    engine_mode:str=Form(default="auto"),allow_slow_cpu:bool=Form(default=False),subtitles:bool=Form(default=True),video_ratio:str=Form(default="9:16"),video_format:str=Form(default="mp4"),
     output_directory:str=Form(default=""),daily_limit:str=Form(default="20"),
 )->dict[str,Any]:
     _require_token(x_rs_ai_token)
@@ -170,7 +170,7 @@ async def create_job(
             if upload and upload.filename:
                 if photo_type not in {"model","flat-lay"}:raise HTTPException(status_code=400,detail=f"نوع عکس لباس {key} معتبر نیست.")
                 garments[key]={"path":str(await _save_upload(upload,job_dir/(f"garment_{key}"+_suffix(upload,".png")))),"photo_type":photo_type}
-    form={"scenario":scenario.strip(),"language":language,"voice":voice,"audio_source":audio_source,"body_mode":body_mode,"clothing_mode":clothing_mode,"garments":garments,"style":style,"movement":movement,"engine_mode":engine_mode,"subtitles":bool(subtitles),"video_ratio":video_ratio,"video_format":video_format.lower(),"output_directory":output_directory.strip(),"daily_limit":daily_limit,"files":files}
+    form={"scenario":scenario.strip(),"language":language,"voice":voice,"audio_source":audio_source,"body_mode":body_mode,"clothing_mode":clothing_mode,"garments":garments,"style":style,"movement":movement,"engine_mode":engine_mode,"allow_slow_cpu":bool(allow_slow_cpu),"subtitles":bool(subtitles),"video_ratio":video_ratio,"video_format":video_format.lower(),"output_directory":output_directory.strip(),"daily_limit":daily_limit,"files":files}
     errors=validate_form(form)
     if errors:raise HTTPException(status_code=400,detail=" ".join(errors))
     if daily_limit=="20" and db.count_jobs_today()>=20:raise HTTPException(status_code=429,detail="سقف روزانهٔ ۲۰ پروژه پر شده است.")
