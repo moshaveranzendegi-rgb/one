@@ -15,6 +15,7 @@ from app import db
 from app.config import JOBS_DIR, OUTPUTS_DIR
 from app.services.audio import make_tts, media_duration, normalize_audio, transcribe_audio
 from app.services.avatar import generate_avatar
+from app.services.engine_selection import resolve_engine_mode
 from app.services.body_completion import complete_body
 from app.services.render import finalize_video
 from app.services.runtime import get_runtime_status
@@ -75,17 +76,8 @@ def run_job(job_id: str) -> None:
             raise RuntimeError("FFmpeg نصب نیست یا مسیر آن نامعتبر است. ابتدا FFmpeg را نصب کن یا مسیر RS_AI_FFMPEG را تنظیم کن.")
         engine_info = status.get("avatar_engine", {})
         detected_engine = engine_info.get("id", "none")
-        requested_engine = form.get("engine_mode", "cloud")
-        if requested_engine == "cloud":
-            # Default path for Intel-only systems: prepare a portable input bundle for
-            # a user-controlled free GPU notebook. No photo/audio is uploaded automatically.
-            engine = "cloud"
-        elif requested_engine == "cpu":
-            if detected_engine != "sadtalker_cpu":
-                raise RuntimeError("موتور CPU آماده نیست. از مسیر GPU ابری استفاده کن یا ابتدا نصب‌کنندهٔ CPU را کامل کن.")
-            engine = "sadtalker_cpu"
-        else:
-            engine = detected_engine if detected_engine in {"omniavatar", "sadtalker_cpu"} else "cloud"
+        requested_engine = form.get("engine_mode", "auto")
+        engine = resolve_engine_mode(requested_engine, detected_engine)
         if engine == "cloud" and (form.get("body_mode") == "complete" or (form.get("clothing_mode") == "custom" and any(form.get("garments", {}).get(k) for k in ("upper", "lower", "onepiece")))):
             raise RuntimeError("در مسیر GPU ابری آزمایشی، تکمیل بدن و تعویض لباس خودکار نیست. ابتدا «حفظ قاب موجود» و «لباس فعلی حفظ شود» را انتخاب کن.")
         if engine == "sadtalker_cpu":
