@@ -48,26 +48,40 @@ def get_runtime_status() -> dict[str, Any]:
     fashn_ready = False
     body_ready = False
     wsl_message = "WSL2 not detected"
-    if wsl_ok:
+    # On Windows, WSL GPU checks cannot succeed without a host NVIDIA driver.
+    # Skip WSL startup/model probes on Intel-only machines instead of timing out
+    # several times for features they cannot run.
+    native_nvidia_smi = shutil.which("nvidia-smi")
+    if os.name == "nt":
+        host_smi = Path(r"C:\Windows\System32\nvidia-smi.exe")
+        native_nvidia_smi = native_nvidia_smi or (str(host_smi) if host_smi.is_file() else None)
+
+    if wsl_ok and (os.name != "nt" or native_nvidia_smi):
         distro = os.getenv("RS_AI_WSL_DISTRO", "Ubuntu")
         wsl_gpu, gpu_text = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", "nvidia-smi -L"], timeout=8)
-        omni_dir = os.getenv("RS_AI_OMNIAVATAR_DIR", "/opt/OmniAvatar")
-        checks = [
-            "scripts/inference.py",
-            "pretrained_models/OmniAvatar-1.3B/pytorch_model.pt",
-            "pretrained_models/wav2vec2-base-960h",
-            "pretrained_models/Wan2.1-T2V-1.3B/diffusion_pytorch_model.safetensors",
-            "pretrained_models/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth",
-            "pretrained_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth",
-        ]
-        model_check = " && ".join(f"test -e {shlex.quote(omni_dir.rstrip('/') + '/' + item)}" for item in checks)
-        omni_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", model_check], timeout=4)
-        fashn_dir = os.getenv("RS_AI_FASHN_DIR", "/opt/fashn-vton-1.5")
-        weights_path = fashn_dir.rstrip("/") + "/weights"
-        fashn_check = f"test -n \"$(find {shlex.quote(weights_path)} -maxdepth 2 -type f -name '*.safetensors' -print -quit 2>/dev/null)\""
-        fashn_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", fashn_check], timeout=4)
-        body_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", "test -f /opt/rs-ai-body-ready"], timeout=3)
-        wsl_message = gpu_text if wsl_gpu else "WSL2 موجود است، اما GPU انویدیا از داخل آن تأیید نشد"
+        if wsl_gpu:
+            omni_dir = os.getenv("RS_AI_OMNIAVATAR_DIR", "/opt/OmniAvatar")
+            checks = [
+                "scripts/inference.py",
+                "pretrained_models/OmniAvatar-1.3B/pytorch_model.pt",
+                "pretrained_models/wav2vec2-base-960h",
+                "pretrained_models/Wan2.1-T2V-1.3B/diffusion_pytorch_model.safetensors",
+                "pretrained_models/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth",
+                "pretrained_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth",
+            ]
+            model_check = " && ".join(f"test -e {shlex.quote(omni_dir.rstrip('/') + '/' + item)}" for item in checks)
+            omni_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", model_check], timeout=4)
+            fashn_dir = os.getenv("RS_AI_FASHN_DIR", "/opt/fashn-vton-1.5")
+            weights_path = fashn_dir.rstrip("/") + "/weights"
+            fashn_check = f"test -n \"$(find {shlex.quote(weights_path)} -maxdepth 2 -type f -name '*.safetensors' -print -quit 2>/dev/null)\""
+            fashn_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", fashn_check], timeout=4)
+            body_ready, _ = _command_version([str(wsl), "-d", distro, "--", "bash", "-lc", "test -f /opt/rs-ai-body-ready"], timeout=3)
+            wsl_message = gpu_text
+        else:
+            # Do not run three more WSL shell commands when the GPU prerequisite failed.
+            wsl_message = "WSL2 exists, but an NVIDIA GPU was not confirmed; GPU model checks skipped"
+    elif wsl_ok:
+        wsl_message = "WSL2 detected; no host NVIDIA driver found, so GPU-specific checks were skipped"
 
     # Optional local CPU fallback, isolated from the app's Python 3.11 runtime.
     sadtalker_dir = Path(os.getenv("RS_AI_SADTALKER_DIR", str(APP_HOME / "engines" / "SadTalker"))).expanduser()
@@ -81,25 +95,32 @@ def get_runtime_status() -> dict[str, Any]:
     sadtalker_ready = False
     sadtalker_message = "نصب نشده؛ برای رایانهٔ بدون GPU انویدیا، tools\\setup_sadtalker_cpu.bat را اجرا کن"
     if sadtalker_files_ready:
-        # Avoid importing inference.py during every status refresh: its transitive imports
-        # can trigger heavyweight model downloads and make the UI appear frozen. The setup
-        # installer performs the full inference import once; runtime status only checks
-        # that the isolated environment contains the essential packages.
-        probe = (
-            "import importlib.util, sys; "
-            "mods=('torch','safetensors','cv2','scipy'); "
-            "missing=[m for m in mods if importlib.util.find_spec(m) is None]; "
-            "print('Missing modules: '+','.join(missing) if missing else 'SadTalker packages present'); "
-            "sys.exit(1 if missing else 0)"
+        # Do not spawn Python from a frozen PyInstaller process during every status
+        # refresh. Windows package discovery is unreliable when the child inherits
+        # the frozen runtime environment, even when the isolated venv is healthy.
+        if os.name == "nt":
+            site_packages = sadtalker_dir / ".venv" / "Lib" / "site-packages"
+        else:
+            candidates = sorted((sadtalker_dir / ".venv" / "lib").glob("python*/site-packages"))
+            site_packages = candidates[0] if candidates else (sadtalker_dir / ".venv" / "lib" / "site-packages")
+        missing = [
+            name for name in ("torch", "safetensors", "scipy")
+            if not (site_packages / name / "__init__.py").is_file()
+        ]
+        cv2_dir = site_packages / "cv2"
+        cv2_ready = (
+            (cv2_dir / "__init__.py").is_file()
+            or any(site_packages.glob("cv2*.pyd"))
+            or any(cv2_dir.glob("*.pyd"))
         )
-        sadtalker_ready, sadtalker_message = _command_version(
-            [str(sadtalker_python), "-c", probe],
-            timeout=8,
-            cwd=str(sadtalker_dir),
+        if not cv2_ready:
+            missing.append("cv2")
+        sadtalker_ready = site_packages.is_dir() and not missing
+        sadtalker_message = (
+            "SadTalker packages present"
+            if sadtalker_ready
+            else "SadTalker dependencies missing: " + ", ".join(missing or ["site-packages"])
         )
-        if not sadtalker_ready:
-            sadtalker_message = "فایل‌ها وجود دارند، اما بعضی وابستگی‌های SadTalker ناقص‌اند: " + sadtalker_message
-
     avatar_engine_id = select_avatar_engine(bool(wsl_gpu and omni_ready), bool(sadtalker_ready))
     avatar_engine_label = {
         "omniavatar": "OmniAvatar GPU",
