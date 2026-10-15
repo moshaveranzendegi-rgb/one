@@ -58,6 +58,7 @@ $portable = Join-Path (Get-Location) 'dist\RS-ai'
 Copy-Item -LiteralPath 'RUN_RS-ai_Portable.bat' -Destination $portable -Force
 Copy-Item -LiteralPath 'tools\setup_sadtalker_cpu.bat' -Destination $portable -Force
 Copy-Item -LiteralPath 'tools\setup_sadtalker_cpu.ps1' -Destination $portable -Force
+Copy-Item -LiteralPath 'tools\sadtalker_videoio.py' -Destination $portable -Force
 @'
 RS ai portable build 0.4.4
 - Start with RUN_RS-ai_Portable.bat or RS-ai.exe.
