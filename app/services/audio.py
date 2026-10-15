@@ -250,6 +250,15 @@ def _write_fallback_subtitles(
     write_srt(entries, subtitles_path)
 
 
+def _piper_length_scale() -> float:
+    """A modest faster speech rate for the offline Persian voice; configurable for testing."""
+    try:
+        value = float(os.getenv("RS_AI_PIPER_LENGTH_SCALE", "0.92"))
+    except (TypeError, ValueError):
+        value = 0.92
+    return max(0.80, min(1.15, value))
+
+
 def _piper_fallback(
     text: str,
     audio_path: Path,
@@ -295,6 +304,7 @@ def _piper_fallback(
         result = subprocess.run(
             [
                 str(piper), "--model", str(model), "--config", str(config),
+                "--length_scale", str(_piper_length_scale()),
                 "--input_file", str(text_file), "--output_file", str(wav_file),
             ],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
