@@ -25,7 +25,9 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(set(RESOLUTIONS), {"9:16", "4:5", "1:1", "16:9", "4:3", "3:4"})
 
     def test_valid_form(self):
+        # Missing engine_mode must remain local-first, not silently select cloud.
         self.assertEqual(validate_form(self._valid()), [])
+        self.assertEqual(self._valid().get("engine_mode", "auto"), "auto")
 
     def test_current_clothing_disallows_garment_upload(self):
         form = self._valid()
