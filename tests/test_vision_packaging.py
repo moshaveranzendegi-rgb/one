@@ -20,7 +20,7 @@ class VisionPackagingTests(unittest.TestCase):
 
     def test_runtime_checks_pymatting_distribution_metadata(self):
         runtime = (ROOT / "app" / "services" / "runtime.py").read_text(encoding="utf-8")
-        self.assertIn('distribution_version("pymatting")', runtime)
+        self.assertIn('distribution("pymatting")', runtime)
 
 
 if __name__ == "__main__":
