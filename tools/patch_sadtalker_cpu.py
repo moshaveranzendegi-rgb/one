@@ -14,13 +14,20 @@ def patch_file(path: Path, replacements: list[tuple[str, str, int]]) -> bool:
     # Idempotency: if this engine file already has the RS ai preset, leave it intact.
     if path.name == "inference.py" and "RS_AI_SADTALKER_FPS" in text and "torch.set_num_threads(_CPU_THREADS)" in text:
         return False
-    if path.name == "generate_batch.py" and "RS_AI_SADTALKER_FPS" in text:
+    if (path.name == "generate_batch.py"
+            and "RS_AI_SADTALKER_FPS" in text
+            and "parse_audio_length(len(wav), 16000, 25)" not in text
+            and "int(length_of_audio * 25)" not in text
+            and "int(np.ceil(audio_length / bit_per_frames))" in text):
         return False
     if path.name == "animate.py" and "_rsai_render_fps" in text and "frames * 1000.0 / render_fps" in text:
         return False
 
     original = text
     for old, new, count in replacements:
+        # Skip completed replacements, while still allowing repair of a partially patched file.
+        if text.count(new) >= count:
+            continue
         occurrences = text.count(old)
         if occurrences < count:
             raise RuntimeError(
@@ -97,7 +104,22 @@ print(f"RS ai CPU preset: torch_threads={_CPU_THREADS}, render_fps={os.environ.g
     except (TypeError, ValueError):
         fps = 8""",
                     1,
-                )
+                ),
+                (
+                    "        num_frames = int(length_of_audio * 25)",
+                    "        num_frames = int(np.ceil(length_of_audio * fps))",
+                    1,
+                ),
+                (
+                    "        wav_length, num_frames = parse_audio_length(len(wav), 16000, 25)",
+                    "        wav_length, num_frames = parse_audio_length(len(wav), 16000, fps)",
+                    1,
+                ),
+                (
+                    "    num_frames = int(audio_length / bit_per_frames)",
+                    "    num_frames = int(np.ceil(audio_length / bit_per_frames))",
+                    1,
+                ),
             ],
         )
 
@@ -148,6 +170,9 @@ def _rsai_render_fps():
         (inference, "RS_AI_SADTALKER_FPS"),
         (inference, "torch.set_num_threads(_CPU_THREADS)"),
         (generate_batch, "RS_AI_SADTALKER_FPS"),
+        (generate_batch, "num_frames = int(np.ceil(length_of_audio * fps))"),
+        (generate_batch, "wav_length, num_frames = parse_audio_length(len(wav), 16000, fps)"),
+        (generate_batch, "num_frames = int(np.ceil(audio_length / bit_per_frames))"),
         (animate, "_rsai_render_fps"),
         (animate, "frames * 1000.0 / render_fps"),
     ]
@@ -155,6 +180,11 @@ def _rsai_render_fps():
         if marker not in path.read_text(encoding="utf-8-sig"):
             print(f"Verification failed: {marker!r} missing in {path}", file=sys.stderr)
             return 1
+
+    batch_text = generate_batch.read_text(encoding="utf-8-sig")
+    if "parse_audio_length(len(wav), 16000, 25)" in batch_text or "int(length_of_audio * 25)" in batch_text:
+        print("Verification failed: SadTalker still contains a 25 FPS audio-length hardcode.", file=sys.stderr)
+        return 1
 
     print("SUCCESS: RS ai low-resource SadTalker preset is installed (2 CPU threads, 8 FPS by default).")
     print("Note: lower FPS reduces runtime but the mouth/face motion will be less smooth.")
