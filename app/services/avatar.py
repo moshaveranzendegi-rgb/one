@@ -106,6 +106,14 @@ def _generate_sadtalker_cpu(image_path: Path, audio_path: Path, job_dir: Path, p
     if ffmpeg_exe:
         ffmpeg_dir = str(Path(ffmpeg_exe).expanduser().resolve().parent)
         child_env["PATH"] = ffmpeg_dir + os.pathsep + child_env.get("PATH", "")
+        child_env["RS_AI_FFMPEG"] = str(Path(ffmpeg_exe).expanduser().resolve())
+    # Keep the CPU-only path bounded to the actual dual-core hardware profile by
+    # default, while allowing power users to override it in their environment.
+    cpu_threads = str(max(1, min(4, int(os.getenv("RS_AI_CPU_THREADS", "2")))))
+    child_env.setdefault("OMP_NUM_THREADS", cpu_threads)
+    child_env.setdefault("MKL_NUM_THREADS", cpu_threads)
+    child_env.setdefault("OPENBLAS_NUM_THREADS", cpu_threads)
+    child_env.setdefault("NUMEXPR_NUM_THREADS", cpu_threads)
     try:
         result = subprocess.run(
             command, cwd=str(root), capture_output=True, text=True,
