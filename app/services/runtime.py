@@ -113,24 +113,28 @@ def get_runtime_status() -> dict[str, Any]:
         "sadtalker_cpu": "SadTalker CPU",
     }.get(avatar_engine_id, "موتور آواتار نصب نیست")
 
+    # Capability checks must be cheap: importing rembg/ONNX Runtime loads large native
+    # libraries and made status refreshes sluggish on older CPU-only computers.
+    from importlib import util as importlib_util
+    from importlib.metadata import PackageNotFoundError, distribution
+
     try:
-        import edge_tts  # noqa: F401
-        tts_ready = True
-    except ImportError:
+        tts_ready = importlib_util.find_spec("edge_tts") is not None
+    except (ImportError, ValueError):
         tts_ready = False
+
     try:
-        from importlib.metadata import version as distribution_version
-        import rembg  # noqa: F401
-        distribution_version("pymatting")
-        rembg_ready = True
-    except Exception:
-        # A frozen package can contain rembg's Python code without the required
-        # pymatting metadata; report the feature unavailable instead of a false positive.
+        rembg_available = importlib_util.find_spec("rembg") is not None
+        onnx_available = importlib_util.find_spec("onnxruntime") is not None
+        distribution("pymatting")  # The frozen build must carry this metadata.
+        rembg_ready = bool(rembg_available and onnx_available)
+    except (PackageNotFoundError, ImportError, ValueError):
+        # A frozen package can contain rembg's Python code without pymatting metadata.
         rembg_ready = False
+
     try:
-        import faster_whisper  # noqa: F401
-        whisper_ready = True
-    except ImportError:
+        whisper_ready = importlib_util.find_spec("faster_whisper") is not None
+    except (ImportError, ValueError):
         whisper_ready = False
 
     return {
