@@ -4,9 +4,33 @@ import os
 import shutil
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 from app.config import APP_HOME
+
+
+def _external_python_env() -> dict[str, str]:
+    """Keep the packaged app's Python/DLL search paths out of the SadTalker venv."""
+    env = os.environ.copy()
+    for name in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP"):
+        env.pop(name, None)
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    if frozen_root:
+        root = Path(frozen_root).resolve()
+        kept: list[str] = []
+        for item in env.get("PATH", "").split(os.pathsep):
+            if not item:
+                continue
+            try:
+                candidate = Path(item.strip('"')).resolve()
+                if candidate == root or root in candidate.parents:
+                    continue
+            except (OSError, RuntimeError):
+                pass
+            kept.append(item)
+        env["PATH"] = os.pathsep.join(kept)
+    return env
 
 
 def _wsl_path(path: Path, wsl: str, distro: str) -> str:
@@ -97,7 +121,7 @@ def _generate_sadtalker_cpu(image_path: Path, audio_path: Path, job_dir: Path, p
     # SadTalker's internal video muxer invokes the bare `ffmpeg` command. The main
     # RS ai app can locate C:\\ffmpeg\\bin\\ffmpeg.exe even when Windows PATH omits it,
     # so pass that directory explicitly to the child process as well.
-    child_env = os.environ.copy()
+    child_env = _external_python_env()
     # Conservative CPU preset for older Intel-only Windows machines.
     cpu_threads = max(1, min(2, os.cpu_count() or 2))
     child_env.setdefault("RS_AI_SADTALKER_CPU_THREADS", str(cpu_threads))
