@@ -89,15 +89,19 @@
       Object.keys(capabilityNames).forEach(k => { if (s[k]) list.append(capabilityRow(k,s[k])); });
       const engineId = s.avatar_engine?.id || 'none';
       const requestedMode = $('engineMode').value;
-      const cloudMode = requestedMode === 'cloud' || (requestedMode === 'auto' && !['omniavatar','sadtalker_cpu'].includes(engineId));
-      const canGenerate = Boolean(s.ffmpeg?.ready && (s.avatar_engine?.ready || cloudMode));
+      const cloudMode = requestedMode === 'cloud';
+      const localEngineReady = Boolean(s.avatar_engine?.ready && (
+        (requestedMode === 'auto' && ['omniavatar','sadtalker_cpu'].includes(engineId)) ||
+        (requestedMode === 'cpu' && engineId === 'sadtalker_cpu')
+      ));
+      const canGenerate = Boolean(s.ffmpeg?.ready && (cloudMode || localEngineReady));
       $('serverBadge').className = 'status-badge ' + (canGenerate ? 'ready' : 'warn');
       $('serverBadge').lastChild.textContent = !canGenerate
-        ? 'نیاز به نصب موتور آواتار'
-        : (cloudMode ? 'آماده‌سازی بستهٔ GPU ابری' : (engineId === 'sadtalker_cpu' ? 'موتور CPU آماده است · حرکت چهره و سر' : 'موتور GPU آماده است'));
+        ? (requestedMode === 'cloud' ? 'FFmpeg یا ورودی‌ها نیاز به بررسی دارد' : 'موتور محلی نصب نیست؛ موتور CPU را نصب کن')
+        : (cloudMode ? 'بسته ابری فقط با انتخاب دستی' : (engineId === 'sadtalker_cpu' ? 'موتور CPU آماده است · چهره و سر' : 'موتور GPU محلی آماده است'));
 
-      const cpuMode = engineId === 'sadtalker_cpu' && $('engineMode').value !== 'cloud';
-      const limitedBodyMode = cpuMode || cloudMode || requestedMode === 'cpu';
+      const cpuMode = requestedMode === 'cpu' || (requestedMode === 'auto' && engineId === 'sadtalker_cpu');
+      const limitedBodyMode = cpuMode || cloudMode;
       const bodyOption = $('bodyMode').querySelector('option[value="complete"]');
       if (bodyOption) bodyOption.disabled = limitedBodyMode;
       if (limitedBodyMode && $('bodyMode').value === 'complete') $('bodyMode').value = 'keep';
