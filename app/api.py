@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from app import db
 from app.config import JOBS_DIR, OUTPUTS_DIR, STATIC_DIR
 from app.pipeline import run_job
@@ -59,11 +60,12 @@ async def index()->HTMLResponse:
 
 @app.get("/api/health")
 async def health()->dict[str,Any]:
-    return {"ok":True,"app":"RS-ai","version":"0.4.4","auth_required":True}
+    return {"ok":True,"app":"RS-ai","version":"0.4.7","auth_required":True}
 
 @app.get("/api/status")
 async def status(x_rs_ai_token:str|None=Header(default=None))->dict[str,Any]:
-    _require_token(x_rs_ai_token);return get_runtime_status()
+    _require_token(x_rs_ai_token)
+    return await run_in_threadpool(get_runtime_status)
 
 @app.get("/api/jobs")
 async def jobs(x_rs_ai_token:str|None=Header(default=None))->dict[str,Any]:
@@ -152,7 +154,7 @@ async def create_job(
     garment_upper_type:str=Form(default="model"),garment_lower_type:str=Form(default="model"),garment_onepiece_type:str=Form(default="model"),
     scenario:str=Form(default=""),language:str=Form(default="fa"),voice:str=Form(default="fa-IR-DilaraNeural"),audio_source:str=Form(default="tts"),
     body_mode:str=Form(default="keep"),clothing_mode:str=Form(default="current"),style:str=Form(default="professional"),movement:str=Form(default="natural"),
-    engine_mode:str=Form(default="cloud"),subtitles:bool=Form(default=True),video_ratio:str=Form(default="9:16"),video_format:str=Form(default="mp4"),
+    engine_mode:str=Form(default="auto"),subtitles:bool=Form(default=True),video_ratio:str=Form(default="9:16"),video_format:str=Form(default="mp4"),
     output_directory:str=Form(default=""),daily_limit:str=Form(default="20"),
 )->dict[str,Any]:
     _require_token(x_rs_ai_token)
