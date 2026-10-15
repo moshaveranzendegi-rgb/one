@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +18,100 @@ VOICE_DEFAULTS = {
     "en": "en-US-JennyNeural",
     "ru": "ru-RU-SvetlanaNeural",
 }
+
+# Mana Persian Piper voice: pinned model, downloaded on first offline fallback.
+_MANA_REVISION = "737756257ce0c614f9147a48ce2936ffc0e24cd6"
+_MANA_MODEL_BYTES = 63_531_379
+_MANA_MODEL_SHA256 = "e390c0e74ba71fd97c49ba662ee0c6e1724b462ba2d4561698af4f564840f126"
+_MANA_BASE_URL = f"https://huggingface.co/MahtaFetrat/Mana-Persian-Piper/resolve/{_MANA_REVISION}"
+
+
+def _download_voice_file(
+    url: str,
+    destination: Path,
+    *,
+    max_bytes: int,
+    expected_bytes: int | None = None,
+    expected_sha256: str | None = None,
+    require_json: bool = False,
+) -> None:
+    """Download a model/config safely to a temporary file, verify it, then atomically replace."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_name(destination.name + ".download")
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "RS-ai/0.4.9 (Persian voice setup)"},
+    )
+    last_error: Exception | None = None
+    for attempt in range(2):
+        digest = hashlib.sha256()
+        total = 0
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response, partial.open("wb") as stream:
+                while True:
+                    block = response.read(1024 * 1024)
+                    if not block:
+                        break
+                    total += len(block)
+                    if total > max_bytes:
+                        raise RuntimeError(f"Voice asset exceeded safe download limit ({max_bytes} bytes).")
+                    stream.write(block)
+                    digest.update(block)
+            if expected_bytes is not None and total != expected_bytes:
+                raise RuntimeError(f"Voice model size mismatch: got {total}, expected {expected_bytes} bytes.")
+            if expected_sha256 and digest.hexdigest().lower() != expected_sha256.lower():
+                raise RuntimeError("Voice model SHA-256 verification failed.")
+            if total < 100:
+                raise RuntimeError("Voice asset download was unexpectedly small.")
+            if require_json:
+                parsed = json.loads(partial.read_text(encoding="utf-8"))
+                if not isinstance(parsed, dict):
+                    raise RuntimeError("Voice configuration JSON is not an object.")
+            os.replace(partial, destination)
+            return
+        except Exception as exc:
+            last_error = exc
+            partial.unlink(missing_ok=True)
+            if attempt == 0:
+                time.sleep(0.5)
+    raise RuntimeError(f"Could not download/verify {destination.name}: {last_error}") from last_error
+
+
+def _ensure_mana_voice(voices_dir: Path) -> tuple[Path, Path]:
+    model = voices_dir / "fa_IR-mana-medium.onnx"
+    config = voices_dir / "fa_IR-mana-medium.onnx.json"
+
+    def valid_model() -> bool:
+        if not model.is_file() or model.stat().st_size != _MANA_MODEL_BYTES:
+            return False
+        digest = hashlib.sha256()
+        with model.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest().lower() == _MANA_MODEL_SHA256
+
+    if not valid_model():
+        _download_voice_file(
+            f"{_MANA_BASE_URL}/fa_IR-mana-medium.onnx?download=true",
+            model,
+            max_bytes=80_000_000,
+            expected_bytes=_MANA_MODEL_BYTES,
+            expected_sha256=_MANA_MODEL_SHA256,
+        )
+    config_valid = False
+    if config.is_file():
+        try:
+            config_valid = isinstance(json.loads(config.read_text(encoding="utf-8")), dict)
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            config_valid = False
+    if not config_valid:
+        _download_voice_file(
+            f"{_MANA_BASE_URL}/fa_IR-mana-medium.onnx.json?download=true",
+            config,
+            max_bytes=200_000,
+            require_json=True,
+        )
+    return model, config
 
 
 @dataclass
@@ -157,15 +255,30 @@ def _piper_fallback(
     audio_path: Path,
     subtitles_path: Path | None,
     ffmpeg: str | None,
-) -> None:
-    """Use the already-installed local Persian Piper voice when Microsoft TTS is unavailable."""
+) -> str:
+    """Prefer the Mana Persian voice; fall back to the installed Amir voice if unavailable."""
     app_data = Path(os.environ.get("LOCALAPPDATA") or Path.home())
     engine_dir = app_data / "RS-ai" / "engines" / "PiperTTS"
     piper = engine_dir / ".venv" / "Scripts" / "piper.exe"
-    model = engine_dir / "voices" / "fa_IR-amir-medium.onnx"
-    config = engine_dir / "voices" / "fa_IR-amir-medium.onnx.json"
-    if not all(path.is_file() for path in (piper, model, config)):
-        raise RuntimeError("صدای آفلاین فارسی Piper نصب نیست؛ فایل مدل fa_IR-amir-medium.onnx پیدا نشد.")
+    voices_dir = engine_dir / "voices"
+    if not piper.is_file():
+        raise RuntimeError("برنامهٔ Piper نصب نیست؛ ابتدا موتور TTS آفلاین را نصب کن.")
+
+    mana_error: Exception | None = None
+    voice_name = "fa_IR-mana-medium"
+    try:
+        model, config = _ensure_mana_voice(voices_dir)
+    except Exception as exc:
+        mana_error = exc
+        voice_name = "fa_IR-amir-medium"
+        model = voices_dir / "fa_IR-amir-medium.onnx"
+        config = voices_dir / "fa_IR-amir-medium.onnx.json"
+        if not all(path.is_file() for path in (model, config)):
+            raise RuntimeError(
+                "مدل فارسی Mana دانلود/اعتبارسنجی نشد و مدل قدیمی Amir هم نصب نیست. "
+                f"جزئیات مدل Mana: {exc}"
+            ) from exc
+
     encoder = ffmpeg or os.getenv("RS_AI_FFMPEG") or shutil.which("ffmpeg")
     if not encoder and os.name == "nt":
         candidate = Path(r"C:\ffmpeg\bin\ffmpeg.exe")
@@ -197,6 +310,9 @@ def _piper_fallback(
     if not audio_path.is_file() or audio_path.stat().st_size < 1024:
         raise RuntimeError("فایل MP3 خروجی Piper ساخته نشد.")
     _write_fallback_subtitles(text, audio_path, subtitles_path, str(encoder))
+    if mana_error:
+        return f"{voice_name}; Mana unavailable ({type(mana_error).__name__})"
+    return voice_name
 
 
 def _gtts_fallback(
@@ -207,7 +323,7 @@ def _gtts_fallback(
     ffmpeg: str | None,
 ) -> None:
     """Use Google Translate TTS for English/Russian if Edge TTS is refusing connections."""
-    if language not in {"fa", "en", "ru"}:
+    if language not in {"en", "ru"}:
         raise RuntimeError("Google TTS جایگزین مناسبی برای این زبان نیست.")
     try:
         from gtts import gTTS
@@ -243,34 +359,21 @@ def make_tts(
                 f"سرویس Microsoft Edge TTS برای زبان {language} شکست خورد و جایگزینی تنظیم نشده است."
             ) from edge_error
 
-        # Google TTS also supports Persian and uses HTTPS, which can work when the
-        # Edge TTS WebSocket handshake is blocked on some networks.
         try:
+            if language == "fa":
+                # Google Translate TTS does not support Persian; use a Persian Piper model.
+                voice_used = _piper_fallback(text, audio_path, subtitles_path, ffmpeg)
+                return f"piper-{voice_used} (offline fallback; Edge TTS={edge_error_name})"
             _gtts_fallback(text, language, audio_path, subtitles_path, ffmpeg)
             return f"gTTS-{language} (online fallback; Edge TTS={edge_error_name})"
-        except Exception as google_error:
+        except Exception as fallback_error:
             audio_path.unlink(missing_ok=True)
             if subtitles_path:
                 subtitles_path.unlink(missing_ok=True)
-
-            if language == "fa":
-                try:
-                    _piper_fallback(text, audio_path, subtitles_path, ffmpeg)
-                    return (
-                        "piper-fa_IR-amir-medium (offline fallback; "
-                        f"Edge TTS={edge_error_name}; Google TTS={type(google_error).__name__})"
-                    )
-                except Exception as piper_error:
-                    raise RuntimeError(
-                        "سرویس Microsoft Edge TTS شکست خورد؛ Google TTS فارسی هم در دسترس نبود؛ "
-                        f"صدای آفلاین Piper نیز ناموفق شد: {piper_error}. "
-                        "راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
-                    ) from piper_error
-
             raise RuntimeError(
-                "سرویس Microsoft Edge TTS شکست خورد و جایگزین Google TTS هم ناموفق بود: "
-                f"{google_error}. راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
-            ) from google_error
+                "سرویس Microsoft Edge TTS شکست خورد و جایگزین گفتار نیز ناموفق بود: "
+                f"{fallback_error}. راه موقت: منبع صدا را روی «آپلود فایل صوتی» بگذار."
+            ) from fallback_error
 
 
 def _run_ffmpeg(ffmpeg: str, args: list[str]) -> None:

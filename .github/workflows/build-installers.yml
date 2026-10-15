@@ -232,8 +232,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.4.8-build.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" --title "RS ai $TAG" --notes "RS ai 0.4.8. Improves Persian TTS fallback by trying Google Translate TTS after Microsoft Edge TTS fails; offline Piper remains the last fallback. SadTalker CPU now uses 12 motion frames per second and expression_scale 1.35 for smoother and more expressive motion, at the cost of longer render time on older CPUs. Windows packaging retains the CPU vision dependencies and lightweight U2NetP default. Unit/API tests, packaged Windows /api/health smoke test, browser asset checks, and Android APK build are run by GitHub Actions. Intel-only PCs can prepare a ZIP for the experimental free cloud-GPU handoff; Colab GPU availability is not guaranteed and uploads are manual. SadTalker CPU remains a face/lips/head-only draft engine; OmniAvatar GPU weights are not bundled."
+          TAG="v0.4.9-build.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --title "RS ai $TAG" --notes "RS ai 0.4.9. Uses Mana Persian Piper (MIT; model SHA-256 verified) as the preferred local Persian voice when Edge TTS cannot connect, with the older Amir voice retained as fallback. gTTS is restricted to English/Russian and is not used for Persian. SadTalker CPU uses 12 motion frames per second and expression_scale 1.35 for smoother and more expressive motion, at the cost of longer render time on older CPUs. Windows packaging retains the CPU vision dependencies and lightweight U2NetP default. Unit/API tests, packaged Windows /api/health smoke test, browser asset checks, and Android APK build run in GitHub Actions. Intel-only PCs can prepare a ZIP for the experimental free cloud-GPU handoff; Colab GPU availability is not guaranteed and uploads are manual. SadTalker CPU remains a face/lips/head-only draft engine; OmniAvatar GPU weights are not bundled."
           gh release upload "$TAG" release-assets/windows/* release-assets/android/* --clobber
           echo "Published release: $TAG"
       - name: Remove temporary source transfer chunks

@@ -13,26 +13,25 @@ async def _raise_edge_403(*args, **kwargs):
 
 
 class AudioFallbackTests(unittest.TestCase):
-    def test_persian_tts_tries_google_before_local_piper_after_edge_failure(self) -> None:
+    def test_persian_tts_uses_piper_after_edge_failure_without_gtts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "spoken.mp3"
             with patch("app.services.audio._edge_tts_stream", new=_raise_edge_403):
                 with patch("app.services.audio._gtts_fallback") as google_fallback:
-                    with patch("app.services.audio._piper_fallback") as piper_fallback:
+                    with patch("app.services.audio._piper_fallback", return_value="fa_IR-mana-medium") as piper_fallback:
                         provider = audio.make_tts("سلام، تست صدا.", "fa", "", target, None, "ffmpeg")
-            self.assertIn("gTTS-fa", provider)
-            google_fallback.assert_called_once()
-            piper_fallback.assert_not_called()
+            self.assertIn("piper-fa_IR-mana-medium", provider)
+            piper_fallback.assert_called_once()
+            google_fallback.assert_not_called()
 
-    def test_persian_tts_uses_piper_only_when_google_tts_fails(self) -> None:
+    def test_persian_tts_uses_piper_even_if_gtts_would_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "spoken.mp3"
             with patch("app.services.audio._edge_tts_stream", new=_raise_edge_403):
-                with patch("app.services.audio._gtts_fallback", side_effect=RuntimeError("network unavailable")):
-                    with patch("app.services.audio._piper_fallback") as piper_fallback:
+                with patch("app.services.audio._gtts_fallback", side_effect=AssertionError("gTTS must not be used for Persian")):
+                    with patch("app.services.audio._piper_fallback", return_value="fa_IR-mana-medium") as piper_fallback:
                         provider = audio.make_tts("سلام، تست صدا.", "fa", "", target, None, "ffmpeg")
-            self.assertIn("piper-fa_IR-amir-medium", provider)
-            self.assertIn("Google TTS=RuntimeError", provider)
+            self.assertIn("piper-fa_IR-mana-medium", provider)
             piper_fallback.assert_called_once()
 
     def test_english_tts_falls_back_to_gtts_after_edge_failure(self) -> None:
