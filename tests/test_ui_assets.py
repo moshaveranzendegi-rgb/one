@@ -10,12 +10,11 @@ class TestUiAssets(unittest.TestCase):
         self.assertIn("overflow-y:auto", css)
         self.assertIn("touch-action:pan-y", css)
 
-    def test_local_engine_is_default_and_cloud_handoff_is_explicit(self):
+    def test_local_engine_is_default_and_cloud_is_not_in_creation_form(self):
         html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
         js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
         self.assertIn('option value="auto" selected', html)
-        self.assertIn('option value="cloud"', html)
-        self.assertNotIn('option value="cloud" selected', html)
+        self.assertNotIn('option value="cloud"', html)
         self.assertIn('id="cloudActionPanel"', html)
         self.assertIn("limitedBodyMode", js)
         self.assertIn("awaiting_cloud", js)
