@@ -13,7 +13,8 @@ class TestUiAssets(unittest.TestCase):
     def test_cloud_handoff_controls_and_limitations_are_present(self):
         html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
         js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
-        self.assertIn('option value="cloud" selected', html)
+        self.assertIn('option value="auto" selected', html)
+        self.assertIn('option value="cloud"', html)
         self.assertIn('id="cloudActionPanel"', html)
         self.assertIn("limitedBodyMode", js)
         self.assertIn("awaiting_cloud", js)
