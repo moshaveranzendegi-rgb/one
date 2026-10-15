@@ -61,6 +61,18 @@ def _check_image(path: Path, label: str) -> None:
         raise RuntimeError(f"فایل تصویر «{label}» خوانده نمی‌شود. یک JPG یا PNG معتبر انتخاب کن.") from exc
 
 
+def cpu_render_guard(engine: str, duration_seconds: float, allow_slow_cpu: bool, max_preview_seconds: float = 5.0) -> str | None:
+    """Prevent accidental multi-hour CPU renders unless the user explicitly opts in."""
+    if engine != "sadtalker_cpu" or allow_slow_cpu or duration_seconds <= max_preview_seconds:
+        return None
+    return (
+        f"این رایانه GPU انویدیا ندارد و SadTalker روی CPU بسیار کند است. "
+        f"زمان صدای شما {duration_seconds:.1f} ثانیه است؛ آزمون قبلیِ ۳٫۵ ثانیه روی این سیستم حدود ۳۸ دقیقه رندر داشت. "
+        f"برای جلوگیری از انتظار چندساعته، فعلاً تا {max_preview_seconds:.0f} ثانیه محدود شده است. "
+        f"صدای کوتاه‌تر انتخاب کن یا تیک «اجازهٔ رندر طولانی روی CPU» را فعال کن تا با آگاهی از زمان زیاد ادامه دهد."
+    )
+
+
 def run_job(job_id: str) -> None:
     job = db.get_job(job_id)
     if not job:
@@ -133,6 +145,15 @@ def run_job(job_id: str) -> None:
             raise RuntimeError(f"مدت صدا {duration/60:.1f} دقیقه است؛ سقف این نسخه ۳ دقیقه است. صدا را کوتاه کن.")
         if duration < 0.5:
             raise RuntimeError("صدای ورودی خیلی کوتاه است.")
+        preview_limit = max(1.0, float(os.getenv("RS_AI_CPU_PREVIEW_MAX_SECONDS", "5")))
+        cpu_guard_error = cpu_render_guard(
+            engine,
+            duration,
+            bool(form.get("allow_slow_cpu", False)),
+            preview_limit,
+        )
+        if cpu_guard_error:
+            raise RuntimeError(cpu_guard_error)
         _progress(job_id, job_dir, 24, f"مدت صدا: {duration:.1f} ثانیه")
 
         current_avatar = avatar
