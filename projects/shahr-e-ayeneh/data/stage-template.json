@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "id": "CITY03-CASE001",
+  "cityId": 3,
+  "cityName": "شهر دو روایت",
+  "conflictId": "informational-conflict",
+  "conflictName": "تعارض اطلاعاتی",
+  "patternRefs": [
+    "انتظار بدترین اتفاق",
+    "یک‌طرفه نگاه کردن",
+    "دفاع کردن"
+  ],
+  "locationName": "پل دو شاهد",
+  "sceneAsset": "assets/cities/city-03-two-narratives.svg",
+  "narrativePremise": "پیامی کوتاه رسیده است؛ تاریخ رسید و گفتهٔ شاهد سوم را کنار هم بگذار.",
+  "clues": [
+    {
+      "id": "clue-a",
+      "name": "پیام کوتاه",
+      "evidence": "پیام فقط زمان ملاقات را تغییر می‌دهد؛ توهین صریحی وجود ندارد.",
+      "kind": "observation"
+    },
+    {
+      "id": "clue-b",
+      "name": "یادداشت شاهد",
+      "evidence": "شاهد می‌گوید مسیر به‌طور موقت بسته بوده است.",
+      "kind": "observation"
+    }
+  ],
+  "question": "کدام تفسیر فعلاً بیشترین سازگاری را با شواهد دارد؟",
+  "hypotheses": [
+    {
+      "id": "h1",
+      "label": "پیام حتماً با قصد بی‌احترامی فرستاده شده",
+      "status": "unsupported",
+      "feedback": "قصد فرستنده از متن موجود به‌تنهایی اثبات نمی‌شود."
+    },
+    {
+      "id": "h2",
+      "label": "تغییر زمان ممکن است علت عملی داشته باشد و اطلاعات هنوز کامل نیست",
+      "status": "supported",
+      "feedback": "این گزینه با شواهد سازگارتر است؛ علت نهایی هنوز روشن نیست."
+    },
+    {
+      "id": "h3",
+      "label": "شاهد سوم قطعاً دروغ می‌گوید",
+      "status": "unsupported",
+      "feedback": "مدرک فعلی برای نسبت‌دادن دروغ کافی نیست."
+    }
+  ],
+  "evidenceLinks": [
+    {
+      "from": "clue-a",
+      "to": "clue-b",
+      "relation": "consistent-with",
+      "reason": "هر دو می‌توانند به تغییر زمان بدون قصد توهین اشاره کنند."
+    }
+  ],
+  "hintLevels": [
+    "تاریخ پیام را ببین.",
+    "مشاهده را از حدس دربارهٔ نیت جدا کن.",
+    "آیا شواهد برای اثبات نیت کافی‌اند؟"
+  ],
+  "sourceNotes": {
+    "document": "تطبیق تعارضات با الگوهای خطرناک",
+    "mappingType": "ارتباط موضوعی، نه تشخیص"
+  },
+  "accessibilityText": "دو سند را باز کن و اشاره به زمان را با یادداشت شاهد مقایسه کن.",
+  "qaStatus": "sample-not-playtest-validated"
+}
